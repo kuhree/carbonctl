@@ -84,9 +84,9 @@ func (engine *Engine) Observe(ctx context.Context, status printer.Status) error 
 	if !engine.initialized {
 		engine.initialized = true
 		engine.previous = status
-		if status.State == "complete" {
+		if status.State == printer.StateComplete {
 			engine.pending = append(engine.pending, taskEvent("complete", completeMilestone, status, false))
-		} else if status.State == "error" {
+		} else if status.State == printer.StateError {
 			engine.pending = append(engine.pending, taskEvent("error", errorMilestone, status, false))
 		} else {
 			if err := engine.reconcileProgress(status, true); err != nil {
@@ -95,9 +95,9 @@ func (engine *Engine) Observe(ctx context.Context, status printer.Status) error 
 		}
 		return engine.flush(ctx)
 	}
-	if status.State == "printing" && (!previous.Connected ||
+	if status.State == printer.StatePrinting && (!previous.Connected ||
 		(previous.TaskID == status.TaskID &&
-			previous.State == "printing" &&
+			previous.State == printer.StatePrinting &&
 			previous.ProgressPercent == status.ProgressPercent)) {
 		if err := engine.reconcileProgress(status, previous.TaskID == status.TaskID); err != nil {
 			return err
@@ -112,7 +112,8 @@ func (engine *Engine) Observe(ctx context.Context, status printer.Status) error 
 			})
 		}
 	}
-	if status.State == "printing" && (previous.TaskID != status.TaskID || previous.State != "printing") {
+	if status.State == printer.StatePrinting &&
+		(previous.TaskID != status.TaskID || previous.State != printer.StatePrinting) {
 		engine.pending = append(engine.pending, taskEvent("start", StartMilestone, status, false))
 	}
 	if status.TaskID != "" && status.TaskID == previous.TaskID && previous.Connected {
@@ -124,13 +125,13 @@ func (engine *Engine) Observe(ctx context.Context, status printer.Status) error 
 			}
 		}
 	}
-	if status.State == "paused" && previous.State != "paused" {
+	if status.State == printer.StatePaused && previous.State != printer.StatePaused {
 		engine.pending = append(engine.pending, taskEvent("pause", pauseMilestone, status, false))
 	}
-	if status.State == "complete" && previous.State != "complete" {
+	if status.State == printer.StateComplete && previous.State != printer.StateComplete {
 		engine.pending = append(engine.pending, taskEvent("complete", completeMilestone, status, false))
 	}
-	if status.State == "error" && previous.State != "error" {
+	if status.State == printer.StateError && previous.State != printer.StateError {
 		engine.pending = append(engine.pending, taskEvent("error", errorMilestone, status, false))
 	}
 	engine.previous = status
@@ -226,7 +227,7 @@ func (engine *Engine) flush(ctx context.Context) error {
 }
 
 func (engine *Engine) reconcileProgress(status printer.Status, markStart bool) error {
-	if status.TaskID == "" || status.State != "printing" {
+	if status.TaskID == "" || status.State != printer.StatePrinting {
 		return nil
 	}
 	if markStart && !engine.Store.MilestoneSent(status.TaskID, StartMilestone) {
@@ -258,7 +259,7 @@ func caption(value event) string {
 	progress := fmt.Sprintf("%.0f%%", status.ProgressPercent)
 	lines := []string{
 		fmt.Sprintf("🖨️ <b>%s · %s</b>", safeName(name), progress),
-		fmt.Sprintf("%s · %s", heading, html.EscapeString(status.State)),
+		fmt.Sprintf("%s · %s", heading, html.EscapeString(string(status.State))),
 		fmt.Sprintf("Layer %d / %d", status.CurrentLayer, status.TotalLayers),
 		fmt.Sprintf("⏱️ %s remaining", remaining(status)),
 		fmt.Sprintf("🌡️ Nozzle %.0f° · Bed %.0f° · Chamber %.0f°",

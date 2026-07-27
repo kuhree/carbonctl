@@ -169,8 +169,8 @@ func TestLifecycleDoesNotBackfillProgressAfterReconnect(t *testing.T) {
 }
 
 func TestLifecycleReportsCompletionAndErrorFoundAfterRestart(t *testing.T) {
-	for _, state := range []string{"complete", "error"} {
-		t.Run(state, func(t *testing.T) {
+	for _, state := range []printer.State{printer.StateComplete, printer.StateError} {
+		t.Run(string(state), func(t *testing.T) {
 			store := newMemoryStore()
 			store.current = status("printing", "cube.gcode", 80)
 			var sent int
@@ -284,7 +284,7 @@ func (function snapshotFunc) Capture(ctx context.Context, status printer.Status,
 	return function(ctx, status, event)
 }
 
-func status(state, filename string, progress float64) printer.Status {
+func status(state printer.State, filename string, progress float64) printer.Status {
 	return printer.Status{
 		Connected: true, State: state, TaskID: "task-1", Filename: filename,
 		ProgressPercent: progress, CurrentLayer: 1, TotalLayers: 10,

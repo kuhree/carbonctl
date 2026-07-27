@@ -109,33 +109,37 @@ func New(source StatusSource, sender Sender, options ...Option) *Manager {
 }
 
 func (manager *Manager) Pause(ctx context.Context) (Result, error) {
-	current := manager.source.Current()
-	if !current.Connected || current.State != "printing" || current.TaskID == "" {
-		return Result{}, ErrNotPrinting
-	}
-	return manager.execute(ctx, "pause", pauseCommand, current.TaskID, func(status printer.Status) bool {
-		return status.Connected && status.TaskID == current.TaskID && status.State == "printing"
-	}, ErrNotPrinting, func(status printer.Status) bool {
-		return status.Connected && status.TaskID == current.TaskID && status.State == "paused"
-	})
+	return manager.transition(ctx, "pause", pauseCommand,
+		printer.StatePrinting, printer.StatePaused, ErrNotPrinting)
 }
 
 func (manager *Manager) Resume(ctx context.Context) (Result, error) {
+	return manager.transition(ctx, "resume", resumeCommand,
+		printer.StatePaused, printer.StatePrinting, ErrNotPaused)
+}
+
+func (manager *Manager) transition(
+	ctx context.Context,
+	action string,
+	command int,
+	from printer.State,
+	to printer.State,
+	preconditionError error,
+) (Result, error) {
 	current := manager.source.Current()
-	if !current.Connected || current.State != "paused" || current.TaskID == "" {
-		return Result{}, ErrNotPaused
+	if !current.IsTaskIn(current.TaskID, from) {
+		return Result{}, preconditionError
 	}
-	return manager.execute(ctx, "resume", resumeCommand, current.TaskID, func(status printer.Status) bool {
-		return status.Connected && status.TaskID == current.TaskID && status.State == "paused"
-	}, ErrNotPaused, func(status printer.Status) bool {
-		return status.Connected && status.TaskID == current.TaskID && status.State == "printing"
+	return manager.execute(ctx, action, command, current.TaskID, func(status printer.Status) bool {
+		return status.IsTaskIn(current.TaskID, from)
+	}, preconditionError, func(status printer.Status) bool {
+		return status.IsTaskIn(current.TaskID, to)
 	})
 }
 
 func (manager *Manager) PrepareStop() (PreparedStop, error) {
 	current := manager.source.Current()
-	if !current.Connected || current.TaskID == "" ||
-		(current.State != "printing" && current.State != "paused") {
+	if !current.HasActiveTask() {
 		return PreparedStop{}, ErrNoActiveTask
 	}
 	tokenBytes := make([]byte, 32)
@@ -161,16 +165,13 @@ func (manager *Manager) ConfirmStop(ctx context.Context, token string) (Result, 
 		return Result{}, ErrInvalidConfirmation
 	}
 	current := manager.source.Current()
-	if !current.Connected || current.TaskID != prepared.taskID ||
-		(current.State != "printing" && current.State != "paused") {
+	if !current.IsTaskIn(prepared.taskID, printer.StatePrinting, printer.StatePaused) {
 		return Result{}, ErrInvalidConfirmation
 	}
 	return manager.execute(ctx, "stop", stopCommand, current.TaskID, func(status printer.Status) bool {
-		return status.Connected && status.TaskID == current.TaskID &&
-			(status.State == "printing" || status.State == "paused")
+		return status.IsTaskIn(current.TaskID, printer.StatePrinting, printer.StatePaused)
 	}, ErrInvalidConfirmation, func(status printer.Status) bool {
-		return status.TaskID != current.TaskID ||
-			status.State == "idle" || status.State == "stopped" || status.State == "complete"
+		return status.TaskEnded(current.TaskID)
 	})
 }
 
@@ -184,8 +185,7 @@ func (manager *Manager) DescribeStop(token string) (PreparedStop, error) {
 		return PreparedStop{}, ErrInvalidConfirmation
 	}
 	current := manager.source.Current()
-	if !current.Connected || current.TaskID != prepared.taskID ||
-		(current.State != "printing" && current.State != "paused") {
+	if !current.IsTaskIn(prepared.taskID, printer.StatePrinting, printer.StatePaused) {
 		return PreparedStop{}, ErrInvalidConfirmation
 	}
 	return PreparedStop{

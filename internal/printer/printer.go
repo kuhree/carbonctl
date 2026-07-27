@@ -25,9 +25,25 @@ type Temperatures struct {
 	Chamber      float64 `json:"chamber"`
 }
 
+type State string
+
+const (
+	StateIdle         State = "idle"
+	StatePrinting     State = "printing"
+	StateFileTransfer State = "file-transfer"
+	StateCalibrating  State = "calibrating"
+	StateTesting      State = "testing"
+	StatePaused       State = "paused"
+	StateStopping     State = "stopping"
+	StateStopped      State = "stopped"
+	StateComplete     State = "complete"
+	StateError        State = "error"
+	StateUnknown      State = "unknown"
+)
+
 type Status struct {
 	Connected             bool         `json:"connected"`
-	State                 string       `json:"state"`
+	State                 State        `json:"state"`
 	MainboardID           string       `json:"-"`
 	TaskID                string       `json:"task_id,omitempty"`
 	Filename              string       `json:"filename,omitempty"`
@@ -39,6 +55,29 @@ type Status struct {
 	ErrorNumber           int          `json:"error_number,omitempty"`
 	Temperatures          Temperatures `json:"temperatures"`
 	ObservedAt            time.Time    `json:"-"`
+}
+
+func (status Status) IsTaskIn(taskID string, states ...State) bool {
+	if !status.Connected || taskID == "" || status.TaskID != taskID {
+		return false
+	}
+	for _, state := range states {
+		if status.State == state {
+			return true
+		}
+	}
+	return false
+}
+
+func (status Status) HasActiveTask() bool {
+	return status.IsTaskIn(status.TaskID, StatePrinting, StatePaused)
+}
+
+func (status Status) TaskEnded(taskID string) bool {
+	return status.TaskID != taskID ||
+		status.State == StateIdle ||
+		status.State == StateStopped ||
+		status.State == StateComplete
 }
 
 type Observer interface {
@@ -131,17 +170,17 @@ func ParseStatus(payload []byte) (Status, error) {
 	state := stateName(int(current[0]))
 	switch integer(printNode, "Status") {
 	case 6:
-		state = "paused"
+		state = StatePaused
 	case 7:
-		state = "stopping"
+		state = StateStopping
 	case 8:
-		state = "stopped"
+		state = StateStopped
 	case 9:
-		state = "complete"
+		state = StateComplete
 	}
 	errorNumber := integer(printNode, "ErrorNumber")
 	if errorNumber != 0 {
-		state = "error"
+		state = StateError
 	}
 	return Status{
 		State:                 state,
@@ -164,20 +203,20 @@ func ParseStatus(payload []byte) (Status, error) {
 	}, nil
 }
 
-func stateName(code int) string {
+func stateName(code int) State {
 	switch code {
 	case 0:
-		return "idle"
+		return StateIdle
 	case 1:
-		return "printing"
+		return StatePrinting
 	case 2:
-		return "file-transfer"
+		return StateFileTransfer
 	case 3:
-		return "calibrating"
+		return StateCalibrating
 	case 4:
-		return "testing"
+		return StateTesting
 	default:
-		return "unknown"
+		return StateUnknown
 	}
 }
 

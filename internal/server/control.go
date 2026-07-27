@@ -27,11 +27,11 @@ func (controls Controls) Tools() []Tool {
 	return []Tool{
 		{
 			Name: "carbonctl_pause", Description: "Pause the observed active print",
-			InputSchema: emptyInput, Call: controls.pause,
+			InputSchema: emptyInput, Call: controls.transition("pause", controls.Controller.Pause),
 		},
 		{
 			Name: "carbonctl_resume", Description: "Resume the observed paused print",
-			InputSchema: emptyInput, Call: controls.resume,
+			InputSchema: emptyInput, Call: controls.transition("resume", controls.Controller.Resume),
 		},
 		{
 			Name:        "carbonctl_prepare_stop",
@@ -52,20 +52,17 @@ func (controls Controls) Tools() []Tool {
 	}
 }
 
-func (controls Controls) pause(ctx context.Context, arguments json.RawMessage) (any, error) {
-	if !validEmptyArguments(arguments) {
-		return toolError(errors.New("pause accepts no arguments")), nil
+func (controls Controls) transition(
+	action string,
+	transition func(context.Context) (control.Result, error),
+) func(context.Context, json.RawMessage) (any, error) {
+	return func(ctx context.Context, arguments json.RawMessage) (any, error) {
+		if !validEmptyArguments(arguments) {
+			return toolError(errors.New(action + " accepts no arguments")), nil
+		}
+		result, err := transition(ctx)
+		return controlResult(result, err), nil
 	}
-	result, err := controls.Controller.Pause(ctx)
-	return controlResult(result, err), nil
-}
-
-func (controls Controls) resume(ctx context.Context, arguments json.RawMessage) (any, error) {
-	if !validEmptyArguments(arguments) {
-		return toolError(errors.New("resume accepts no arguments")), nil
-	}
-	result, err := controls.Controller.Resume(ctx)
-	return controlResult(result, err), nil
 }
 
 func (controls Controls) prepareStop(_ context.Context, arguments json.RawMessage) (any, error) {
