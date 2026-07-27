@@ -6,15 +6,18 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"net"
+	"net/url"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 const (
-	maxMessageBytes = 1 << 20
-	readTimeout     = 45 * time.Second
-	dialTimeout     = 500 * time.Millisecond
+	maxMessageBytes  = 1 << 20
+	readTimeout      = 45 * time.Second
+	dialTimeout      = 500 * time.Millisecond
+	discoveryTimeout = 2 * time.Second
 )
 
 type Temperatures struct {
@@ -86,8 +89,10 @@ type Observer interface {
 }
 
 type Client struct {
-	URL      string
-	Observer Observer
+	URL              string
+	DiscoveryAddress string
+	MainboardID      string
+	Observer         Observer
 }
 
 func (client Client) Run(ctx context.Context) error {
@@ -124,6 +129,15 @@ func (client Client) read(ctx context.Context) error {
 	}
 	defer connection.Close()
 	connection.SetReadLimit(maxMessageBytes)
+	mainboardID := client.MainboardID
+	if mainboardID == "" {
+		mainboardID, _ = client.discover(ctx)
+	}
+	if mainboardID != "" {
+		if err := requestStatus(connection, mainboardID); err != nil {
+			return err
+		}
+	}
 	for {
 		if err := connection.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
 			return err
@@ -145,6 +159,75 @@ func (client Client) read(ctx context.Context) error {
 			return err
 		}
 	}
+}
+
+func (client Client) discover(ctx context.Context) (string, error) {
+	address := client.DiscoveryAddress
+	if address == "" {
+		websocketURL, err := url.Parse(client.URL)
+		if err != nil {
+			return "", err
+		}
+		host := websocketURL.Hostname()
+		if host == "" {
+			return "", errors.New("SDCP websocket URL has no host")
+		}
+		address = net.JoinHostPort(host, "3000")
+	}
+	discoveryContext, cancel := context.WithTimeout(ctx, discoveryTimeout)
+	defer cancel()
+	connection, err := (&net.Dialer{}).DialContext(discoveryContext, "udp", address)
+	if err != nil {
+		return "", err
+	}
+	defer connection.Close()
+	deadline, _ := discoveryContext.Deadline()
+	if err := connection.SetDeadline(deadline); err != nil {
+		return "", err
+	}
+	if _, err := connection.Write([]byte("M99999")); err != nil {
+		return "", err
+	}
+	var response struct {
+		Data struct {
+			MainboardID string `json:"MainboardID"`
+		} `json:"Data"`
+	}
+	payload := make([]byte, 1024)
+	count, err := connection.Read(payload)
+	if err != nil {
+		return "", err
+	}
+	if err := json.Unmarshal(payload[:count], &response); err != nil {
+		return "", err
+	}
+	if response.Data.MainboardID == "" {
+		return "", errors.New("SDCP discovery response has no mainboard identity")
+	}
+	return response.Data.MainboardID, nil
+}
+
+func requestStatus(connection *websocket.Conn, mainboardID string) error {
+	requestID, err := randomUUID()
+	if err != nil {
+		return err
+	}
+	messageID, err := randomUUID()
+	if err != nil {
+		return err
+	}
+	if err := connection.SetWriteDeadline(time.Now().Add(dialTimeout)); err != nil {
+		return err
+	}
+	defer connection.SetWriteDeadline(time.Time{})
+	return connection.WriteJSON(map[string]any{
+		"Id": messageID,
+		"Data": map[string]any{
+			"Cmd": 0, "Data": map[string]any{}, "RequestID": requestID,
+			"MainboardID": mainboardID, "TimeStamp": time.Now().Unix(), "From": 0,
+		},
+		"Topic": "sdcp/request/" + mainboardID,
+	})
 }
 
 func ParseStatus(payload []byte) (Status, error) {

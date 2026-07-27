@@ -2,6 +2,7 @@ package printer_test
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -116,7 +117,8 @@ func TestClientReconnectsAfterAnUnsafePayload(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go (printer.Client{
-		URL: "ws" + strings.TrimPrefix(server.URL, "http"), Observer: observer,
+		URL:         "ws" + strings.TrimPrefix(server.URL, "http"),
+		MainboardID: "board-7", Observer: observer,
 	}).Run(ctx)
 
 	select {
@@ -126,6 +128,75 @@ func TestClientReconnectsAfterAnUnsafePayload(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("client did not reconnect after rejecting oversized payload")
+	}
+}
+
+func TestClientDiscoversPrinterAndRequestsInitialStatus(t *testing.T) {
+	discovery, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer discovery.Close()
+	go func() {
+		payload := make([]byte, 64)
+		count, address, readErr := discovery.ReadFrom(payload)
+		if readErr != nil || string(payload[:count]) != "M99999" {
+			return
+		}
+		response := []byte(`{"Data":{"MainboardID":"board-live"}}`)
+		_, _ = discovery.WriteTo(response, address)
+	}()
+
+	requests := make(chan map[string]any, 1)
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, upgradeErr := upgrader.Upgrade(writer, request, nil)
+		if upgradeErr != nil {
+			return
+		}
+		defer connection.Close()
+		var refresh map[string]any
+		if readErr := connection.ReadJSON(&refresh); readErr != nil {
+			return
+		}
+		requests <- refresh
+		_ = connection.WriteJSON(map[string]any{
+			"MainboardID": "board-live",
+			"Status":      map[string]any{"CurrentStatus": []int{0}},
+			"Topic":       "sdcp/status/board-live",
+		})
+		<-request.Context().Done()
+	}))
+	defer server.Close()
+
+	observer := &recordingObserver{observations: make(chan printer.Status, 1)}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go (printer.Client{
+		URL:              "ws" + strings.TrimPrefix(server.URL, "http"),
+		DiscoveryAddress: discovery.LocalAddr().String(),
+		Observer:         observer,
+	}).Run(ctx)
+
+	select {
+	case request := <-requests:
+		encoded, _ := json.Marshal(request)
+		if request["Topic"] != "sdcp/request/board-live" ||
+			!strings.Contains(string(encoded), `"Cmd":0`) ||
+			!strings.Contains(string(encoded), `"MainboardID":"board-live"`) {
+			t.Fatalf("refresh request = %s", encoded)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("client did not request initial status")
+	}
+	select {
+	case status := <-observer.observations:
+		if !status.Connected || status.State != printer.StateIdle ||
+			status.MainboardID != "board-live" {
+			t.Fatalf("initial status = %#v", status)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("client did not observe refreshed status")
 	}
 }
 
