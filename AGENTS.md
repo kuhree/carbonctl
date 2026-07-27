@@ -5,7 +5,7 @@ Centauri Carbon) 3D printer's SDCP websocket/camera/history endpoints and MCP
 tool clients. It is the mechanism behind "talk to my printer": the Hermes
 `carbonctl` profile is a Telegram-facing agent, persona "Carbon", that speaks
 only through carbonctl's tools — see
-`nix/modules/nixos/services/hermes-agent/profiles/carbonctl/SOUL.md` for the
+`nix/modules/nixos/services/hermes-agent/profiles/carbon/SOUL.md` for the
 persona/behavior contract and `config.nix` in that directory for its
 allowlisted toolset.
 
@@ -19,14 +19,14 @@ deployment modules below are canonical. Prefer reading those over asking.
   control manager, HTTP server).
 - Each internal package opens with a one-line doc comment stating its
   responsibility (`go doc ./internal/...` or just the top of each file).
-- `nix/modules/nixos/services/carbonctl/default.nix` is the deployment
-  contract: CLI flags, systemd hardening, secrets. It is also the source of
-  truth for default ports/paths — don't hardcode them elsewhere.
-- `nix/modules/nixos/services/hermes-agent/profiles/carbonctl/` is the
+- `module.nix` is the deployment contract: CLI flags, systemd hardening,
+  secrets. It is also the source of truth for default ports/paths — don't
+  hardcode them elsewhere.
+- `nix/modules/nixos/services/hermes-agent/profiles/carbon/` is the
   conversational layer on top of this service (Hermes profile, MCP tool
   allowlist, Telegram gateway systemd units).
-- `nix/modules/nixos/services/carbonctl/tests.nix` is the NixOS integration
-  test and doubles as a worked example of the full config surface.
+- `module-tests.nix` is the NixOS integration test and doubles as a worked
+  example of the full config surface.
 
 ## Runtime boundaries
 
