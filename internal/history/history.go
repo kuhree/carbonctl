@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	defaultLimit       = 5
-	maxLimit           = 20
-	defaultMaxResponse = 1 << 20
+	defaultLimit        = 5
+	maxLimit            = 20
+	maxSnapshotsPerTask = 20
+	defaultMaxResponse  = 1 << 20
 )
 
 var ErrHistoryUnavailable = errors.New("history unavailable")
@@ -91,7 +92,8 @@ func AttachSnapshots(tasks []Task, snapshots []Snapshot) []Task {
 	result := append([]Task(nil), tasks...)
 	for index := range result {
 		for _, snapshot := range snapshots {
-			if snapshot.TaskID == result[index].TaskID {
+			if snapshot.TaskID == result[index].TaskID &&
+				len(result[index].Snapshots) < maxSnapshotsPerTask {
 				result[index].Snapshots = append(result[index].Snapshots, snapshot)
 			}
 		}

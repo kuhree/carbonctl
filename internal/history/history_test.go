@@ -59,3 +59,15 @@ func TestAttachSnapshotsAddsOnlyMatchingVisualContext(t *testing.T) {
 		t.Fatalf("tasks = %#v", got)
 	}
 }
+
+func TestAttachSnapshotsBoundsVisualContextPerTask(t *testing.T) {
+	records := make([]history.Snapshot, 25)
+	for index := range records {
+		records[index] = history.Snapshot{TaskID: "task-1"}
+	}
+
+	got := history.AttachSnapshots([]history.Task{{TaskID: "task-1"}}, records)
+	if len(got[0].Snapshots) != 20 {
+		t.Fatalf("snapshots = %d, want 20", len(got[0].Snapshots))
+	}
+}

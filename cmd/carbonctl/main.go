@@ -11,30 +11,45 @@ import (
 	"syscall"
 	"time"
 
+	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/camera"
+	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/history"
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/printer"
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/server"
+	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/snapshots"
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/state"
 )
 
+type config struct {
+	listenAddress      string
+	printerURL         string
+	statePath          string
+	telemetryFreshness time.Duration
+	cameraURL          string
+	historyURL         string
+	snapshotDirectory  string
+	snapshotRetention  time.Duration
+}
+
 func main() {
-	var listenAddress string
-	var printerURL string
-	var statePath string
-	var telemetryFreshness time.Duration
-	flag.StringVar(&listenAddress, "listen", "127.0.0.1:9086", "loopback HTTP listen address")
-	flag.StringVar(&printerURL, "printer-url", "", "OpenCentauri WebSocket URL")
-	flag.StringVar(&statePath, "state", "", "persistent state document path")
-	flag.DurationVar(&telemetryFreshness, "telemetry-freshness", server.DefaultTelemetryFreshness, "maximum ready telemetry age")
+	var configuration config
+	flag.StringVar(&configuration.listenAddress, "listen", "127.0.0.1:9086", "loopback HTTP listen address")
+	flag.StringVar(&configuration.printerURL, "printer-url", "", "OpenCentauri WebSocket URL")
+	flag.StringVar(&configuration.statePath, "state", "", "persistent state document path")
+	flag.DurationVar(&configuration.telemetryFreshness, "telemetry-freshness", server.DefaultTelemetryFreshness, "maximum ready telemetry age")
+	flag.StringVar(&configuration.cameraURL, "camera-url", "", "OpenCentauri MJPEG URL")
+	flag.StringVar(&configuration.historyURL, "history-url", "", "printer history URL")
+	flag.StringVar(&configuration.snapshotDirectory, "snapshot-dir", "", "retained snapshot directory")
+	flag.DurationVar(&configuration.snapshotRetention, "snapshot-retention", 72*time.Hour, "retained snapshot lifetime")
 	flag.Parse()
 
-	if err := run(listenAddress, printerURL, statePath, telemetryFreshness); err != nil {
+	if err := run(configuration); err != nil {
 		slog.Error("carbonctl stopped", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(listenAddress, printerURL, statePath string, telemetryFreshness time.Duration) error {
-	host, _, err := net.SplitHostPort(listenAddress)
+func run(configuration config) error {
+	host, _, err := net.SplitHostPort(configuration.listenAddress)
 	if err != nil {
 		return err
 	}
@@ -43,7 +58,7 @@ func run(listenAddress, printerURL, statePath string, telemetryFreshness time.Du
 		return server.ErrNonLoopback
 	}
 
-	listener, err := net.Listen("tcp", listenAddress)
+	listener, err := net.Listen("tcp", configuration.listenAddress)
 	if err != nil {
 		return err
 	}
@@ -51,18 +66,33 @@ func run(listenAddress, printerURL, statePath string, telemetryFreshness time.Du
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	store, err := state.Open(statePath)
+	store, err := state.Open(configuration.statePath)
 	if err != nil {
 		return err
 	}
 	go func() {
-		if err := (printer.Client{URL: printerURL, Observer: store}).Run(ctx); err != nil {
+		if err := (printer.Client{URL: configuration.printerURL, Observer: store}).Run(ctx); err != nil {
 			slog.Error("printer observation stopped", "error", err)
 			stop()
 		}
 	}()
+	archive := snapshots.Store{Directory: configuration.snapshotDirectory}
+	if err := archive.Cleanup(ctx, configuration.snapshotRetention); err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: server.SnapshotTimeout}
+	media := server.Media{
+		Camera:    camera.Client{URL: configuration.cameraURL, HTTPClient: client},
+		Archive:   archive,
+		History:   history.Client{URL: configuration.historyURL, HTTPClient: client},
+		Status:    store,
+		Retention: configuration.snapshotRetention,
+	}
 	service := &http.Server{
-		Handler:           server.New(store, server.WithTelemetryFreshness(telemetryFreshness)),
+		Handler: server.New(store,
+			server.WithTelemetryFreshness(configuration.telemetryFreshness),
+			server.WithTools(media.Tools()...),
+		),
 		ReadHeaderTimeout: server.HeaderTimeout,
 		ReadTimeout:       server.ReadTimeout,
 		WriteTimeout:      server.WriteTimeout,

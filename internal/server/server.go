@@ -29,6 +29,7 @@ type StatusSource interface {
 type options struct {
 	now       func() time.Time
 	freshness time.Duration
+	tools     []Tool
 }
 
 type Option func(*options)
@@ -68,7 +69,8 @@ func New(source StatusSource, supplied ...Option) http.Handler {
 			ID      json.RawMessage `json:"id"`
 			Method  string          `json:"method"`
 			Params  struct {
-				Name string `json:"name"`
+				Name      string          `json:"name"`
+				Arguments json.RawMessage `json:"arguments"`
 			} `json:"params"`
 		}
 		decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 64<<10))
@@ -87,21 +89,37 @@ func New(source StatusSource, supplied ...Option) http.Handler {
 				"serverInfo":      map[string]string{"name": "carbonctl", "version": "1"},
 			}
 		case "tools/list":
-			response["result"] = map[string]any{"tools": []any{map[string]any{
+			tools := []any{map[string]any{
 				"name":        "carbonctl_get_status",
 				"description": "Observe the current printer state",
 				"inputSchema": map[string]any{"type": "object", "additionalProperties": false},
-			}}}
+			}}
+			for _, tool := range configuration.tools {
+				tools = append(tools, map[string]any{
+					"name": tool.Name, "description": tool.Description, "inputSchema": tool.InputSchema,
+				})
+			}
+			response["result"] = map[string]any{"tools": tools}
 		case "tools/call":
-			if incoming.Params.Name != "carbonctl_get_status" {
+			if incoming.Params.Name == "carbonctl_get_status" {
+				current := source.Current()
+				response["result"] = map[string]any{
+					"content":           []any{map[string]any{"type": "text", "text": mustJSON(current)}},
+					"structuredContent": current, "isError": false,
+				}
+				break
+			}
+			tool, ok := configuration.tool(incoming.Params.Name)
+			if !ok {
 				response["error"] = map[string]any{"code": -32602, "message": "unknown tool"}
 				break
 			}
-			current := source.Current()
-			response["result"] = map[string]any{
-				"content":           []any{map[string]any{"type": "text", "text": mustJSON(current)}},
-				"structuredContent": current, "isError": false,
+			result, err := tool.Call(request.Context(), incoming.Params.Arguments)
+			if err != nil {
+				response["error"] = map[string]any{"code": -32603, "message": "tool failed"}
+				break
 			}
+			response["result"] = result
 		default:
 			response["error"] = map[string]any{"code": -32601, "message": "method not found"}
 		}

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/camera"
@@ -37,6 +38,20 @@ func TestCaptureRejectsOversizedFrame(t *testing.T) {
 	defer server.Close()
 
 	_, err := (camera.Client{URL: server.URL, MaxFrameBytes: 4}).Capture(context.Background())
+	if err != camera.ErrImageUnavailable {
+		t.Fatalf("error = %v, want image unavailable", err)
+	}
+}
+
+func TestCaptureBoundsMultipartHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+		_, _ = io.WriteString(writer, "--frame\r\nX-Padding: "+strings.Repeat("x", 70<<10)+
+			"\r\nContent-Type: image/jpeg\r\n\r\n\xff\xd8ok\xff\xd9\r\n")
+	}))
+	defer server.Close()
+
+	_, err := (camera.Client{URL: server.URL, MaxFrameBytes: 16}).Capture(context.Background())
 	if err != camera.ErrImageUnavailable {
 		t.Fatalf("error = %v, want image unavailable", err)
 	}
