@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -212,6 +213,7 @@ func (engine *Engine) flush(ctx context.Context) error {
 			if err == nil {
 				message.Image = image
 			} else {
+				slog.Warn("lifecycle snapshot capture failed", "event", next.name, "error", err)
 				message.Caption = boundedCaption(message.Caption + "\n📷 Image unavailable")
 			}
 		}

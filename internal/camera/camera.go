@@ -8,6 +8,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"strings"
 )
 
 const defaultMaxFrameBytes = 8 << 20
@@ -44,7 +45,11 @@ func (client Client) Capture(ctx context.Context) ([]byte, error) {
 	if err != nil || mediaType != "multipart/x-mixed-replace" || parameters["boundary"] == "" {
 		return nil, ErrImageUnavailable
 	}
-	part, err := multipart.NewReader(response.Body, parameters["boundary"]).NextPart()
+	// Some MJPEG streamers (including this printer's) put the wire delimiter's
+	// leading "--" inside the boundary parameter itself, even though the
+	// multipart body only ever prepends "--" once per RFC 2046.
+	boundary := strings.TrimPrefix(parameters["boundary"], "--")
+	part, err := multipart.NewReader(response.Body, boundary).NextPart()
 	if err != nil {
 		return nil, ErrImageUnavailable
 	}
