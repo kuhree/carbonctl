@@ -39,8 +39,7 @@ assert !lib.hasInfix "telegram-chat-file" serviceConfig.ExecStart;
 assert !lib.hasInfix "TELEGRAM_BOT_TOKEN=" serviceConfig.ExecStart;
 assert
   service.environment.CARBONCTL_TELEGRAM_TOKEN_FILE == "/run/agenix/carbonctl-telegram-bot-token";
-assert
-  service.environment.CARBONCTL_TELEGRAM_CHAT_FILE == "/run/agenix/carbonctl-telegram-chat-id";
+assert service.environment.CARBONCTL_TELEGRAM_CHAT_FILE == "/run/agenix/carbonctl-telegram-chat-id";
 assert serviceConfig.NoNewPrivileges;
 assert serviceConfig.PrivateDevices;
 assert serviceConfig.ProtectSystem == "strict";
