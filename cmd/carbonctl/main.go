@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -54,9 +55,9 @@ func main() {
 	flag.DurationVar(&configuration.snapshotRetention, "snapshot-retention", 72*time.Hour, "retained snapshot lifetime")
 	flag.DurationVar(&configuration.snapshotCleanup, "snapshot-cleanup-interval", 0, "snapshot cleanup cadence (default: hourly, bounded by retention)")
 	flag.StringVar(&configuration.telegramAPIURL, "telegram-api-url", "", "Telegram Bot API base URL")
-	flag.StringVar(&configuration.telegramTokenFile, "telegram-token-file", "", "Telegram bot token file")
-	flag.StringVar(&configuration.telegramChatFile, "telegram-chat-file", "", "authorized Telegram chat ID file")
 	flag.Parse()
+	configuration.telegramTokenFile = os.Getenv("CARBONCTL_TELEGRAM_TOKEN_FILE")
+	configuration.telegramChatFile = os.Getenv("CARBONCTL_TELEGRAM_CHAT_FILE")
 
 	if err := run(configuration); err != nil {
 		slog.Error("carbonctl stopped", "error", err)
@@ -100,7 +101,7 @@ func run(configuration config) error {
 		if configuration.telegramTokenFile == "" || configuration.telegramChatFile == "" {
 			return errors.New("both Telegram credential files are required")
 		}
-		token, err := readCredential(configuration.telegramTokenFile)
+		token, err := readCredential(configuration.telegramTokenFile, "TELEGRAM_BOT_TOKEN")
 		if err != nil {
 			return errors.New("read Telegram token")
 		}
@@ -160,7 +161,7 @@ func run(configuration config) error {
 }
 
 func readTelegramChatID(path string) (string, error) {
-	value, err := readCredential(path)
+	value, err := readCredential(path, "TELEGRAM_ALLOWED_USERS")
 	if err != nil || value[0] == '0' {
 		return "", errInvalidTelegramChatID
 	}
@@ -175,7 +176,9 @@ func readTelegramChatID(path string) (string, error) {
 	return value, nil
 }
 
-func readCredential(path string) (string, error) {
+// readCredential reads a credential file, tolerating an optional "KEY="
+// prefix so the same file can double as a systemd EnvironmentFile= entry.
+func readCredential(path, key string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -188,6 +191,9 @@ func readCredential(path string) (string, error) {
 	value := string(payload)
 	for len(value) > 0 && (value[len(value)-1] == '\n' || value[len(value)-1] == '\r') {
 		value = value[:len(value)-1]
+	}
+	if rest, ok := strings.CutPrefix(value, key+"="); ok {
+		value = rest
 	}
 	if value == "" {
 		return "", errors.New("credential is empty")

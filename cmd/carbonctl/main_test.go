@@ -18,6 +18,28 @@ func TestReadTelegramChatIDAcceptsOneCanonicalPositiveNumericID(t *testing.T) {
 	}
 }
 
+func TestReadTelegramChatIDAcceptsEnvFilePrefixedValue(t *testing.T) {
+	path := writeCredential(t, "TELEGRAM_ALLOWED_USERS=123456789\n")
+	got, err := readTelegramChatID(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "123456789" {
+		t.Fatalf("chat ID = %q, want canonical value", got)
+	}
+}
+
+func TestReadCredentialAcceptsEnvFilePrefixedValue(t *testing.T) {
+	path := writeCredential(t, "TELEGRAM_BOT_TOKEN=abc:123\n")
+	got, err := readCredential(path, "TELEGRAM_BOT_TOKEN")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "abc:123" {
+		t.Fatalf("token = %q, want stripped value", got)
+	}
+}
+
 func TestReadTelegramChatIDRejectsNonCanonicalOrMultipleValues(t *testing.T) {
 	tests := map[string]string{
 		"empty":             "",

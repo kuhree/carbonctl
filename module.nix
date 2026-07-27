@@ -113,6 +113,10 @@ in
         StartLimitIntervalSec = "5min";
         StartLimitBurst = 5;
       };
+      environment = {
+        CARBONCTL_TELEGRAM_TOKEN_FILE = config.age.secrets.carbonctl-telegram-bot-token.path;
+        CARBONCTL_TELEGRAM_CHAT_FILE = config.age.secrets.carbonctl-telegram-chat-id.path;
+      };
       serviceConfig = {
         User = "carbonctl";
         Group = "carbonctl";
@@ -132,10 +136,6 @@ in
           (lib.escapeShellArg snapshotDirectory)
           "--snapshot-retention"
           (lib.escapeShellArg cfg.snapshotRetention)
-          "--telegram-token-file"
-          (lib.escapeShellArg config.age.secrets.carbonctl-telegram-bot-token.path)
-          "--telegram-chat-file"
-          (lib.escapeShellArg config.age.secrets.carbonctl-telegram-chat-id.path)
         ];
         Restart = "on-failure";
         RestartSec = 5;

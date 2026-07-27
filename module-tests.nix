@@ -34,11 +34,13 @@ assert cfg.enable;
 assert cfg.bind == "127.0.0.1";
 assert service.wantedBy == [ "multi-user.target" ];
 assert lib.hasInfix "--listen 127.0.0.1:9086" serviceConfig.ExecStart;
-assert lib.hasInfix "--telegram-token-file /run/agenix/carbonctl-telegram-bot-token"
-  serviceConfig.ExecStart;
-assert lib.hasInfix "--telegram-chat-file /run/agenix/carbonctl-telegram-chat-id"
-  serviceConfig.ExecStart;
+assert !lib.hasInfix "telegram-token-file" serviceConfig.ExecStart;
+assert !lib.hasInfix "telegram-chat-file" serviceConfig.ExecStart;
 assert !lib.hasInfix "TELEGRAM_BOT_TOKEN=" serviceConfig.ExecStart;
+assert
+  service.environment.CARBONCTL_TELEGRAM_TOKEN_FILE == "/run/agenix/carbonctl-telegram-bot-token";
+assert
+  service.environment.CARBONCTL_TELEGRAM_CHAT_FILE == "/run/agenix/carbonctl-telegram-chat-id";
 assert serviceConfig.NoNewPrivileges;
 assert serviceConfig.PrivateDevices;
 assert serviceConfig.ProtectSystem == "strict";
@@ -51,13 +53,13 @@ assert
 assert configuration.age.secrets.carbonctl-telegram-bot-token.owner == "hermes";
 assert configuration.age.secrets.carbonctl-telegram-bot-token.group == "carbonctl";
 assert configuration.age.secrets.carbonctl-telegram-chat-id.mode == "0440";
-assert configuration.systemd.services ? hermes-carbonctl-env;
+assert gateway.requires == [ "carbonctl.service" ];
 assert
-  gateway.requires == [
-    "carbonctl.service"
-    "hermes-carbonctl-env.service"
+  gateway.serviceConfig.EnvironmentFile == [
+    "/var/lib/hermes/.hermes/.env"
+    "/run/agenix/carbonctl-telegram-bot-token"
+    "/run/agenix/carbonctl-telegram-chat-id"
   ];
-assert gateway.serviceConfig.EnvironmentFile == "/var/lib/hermes/.hermes/profiles/carbon/.env";
 assert lib.any (
   rule: lib.hasInfix "/profiles/carbon/config.yaml" rule
 ) configuration.systemd.tmpfiles.rules;
