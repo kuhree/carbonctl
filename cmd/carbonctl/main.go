@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -37,6 +38,8 @@ type config struct {
 	telegramTokenFile  string
 	telegramChatFile   string
 }
+
+var errInvalidTelegramChatID = errors.New("invalid Telegram chat ID")
 
 func main() {
 	var configuration config
@@ -95,7 +98,7 @@ func run(configuration config) error {
 		if err != nil {
 			return errors.New("read Telegram token")
 		}
-		chatID, err := readCredential(configuration.telegramChatFile)
+		chatID, err := readTelegramChatID(configuration.telegramChatFile)
 		if err != nil {
 			return errors.New("read Telegram chat identity")
 		}
@@ -148,6 +151,22 @@ func run(configuration config) error {
 		_ = service.Shutdown(shutdownCtx)
 	}()
 	return service.Serve(listener)
+}
+
+func readTelegramChatID(path string) (string, error) {
+	value, err := readCredential(path)
+	if err != nil || value[0] == '0' {
+		return "", errInvalidTelegramChatID
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return "", errInvalidTelegramChatID
+		}
+	}
+	if _, err := strconv.ParseUint(value, 10, 63); err != nil {
+		return "", errInvalidTelegramChatID
+	}
+	return value, nil
 }
 
 func readCredential(path string) (string, error) {
