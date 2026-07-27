@@ -95,3 +95,75 @@ func TestStoreListsValidMetadataAcrossRestart(t *testing.T) {
 		t.Fatalf("metadata = %#v, want %#v", got, []snapshots.Metadata{want})
 	}
 }
+
+func TestCleanupLoopExpiresManagedPairsWithoutCaptureAndStopsWithContext(t *testing.T) {
+	directory := t.TempDir()
+	now := time.Now().UTC()
+	store := snapshots.Store{Directory: directory, Now: func() time.Time { return now }}
+	expired, err := store.Save(context.Background(), []byte("\xff\xd8old\xff\xd9"), snapshots.Metadata{
+		TakenAt: now.Add(-2 * time.Hour), TaskID: "old",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unrelated := filepath.Join(directory, "keep.txt")
+	if err := os.WriteFile(unrelated, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		snapshots.RunCleanup(ctx, store, time.Hour, 5*time.Millisecond, nil)
+	}()
+	eventually(t, func() bool {
+		_, imageErr := os.Stat(filepath.Join(directory, expired.ImageName))
+		_, sidecarErr := os.Stat(filepath.Join(directory, expired.SidecarName))
+		return os.IsNotExist(imageErr) && os.IsNotExist(sidecarErr)
+	})
+	if _, err := os.Stat(unrelated); err != nil {
+		t.Fatalf("unrelated file removed: %v", err)
+	}
+
+	cancel()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup loop did not stop")
+	}
+	afterStop, err := store.Save(context.Background(), []byte("\xff\xd8later\xff\xd9"), snapshots.Metadata{
+		TakenAt: now.Add(-2 * time.Hour), TaskID: "later",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if _, err := os.Stat(filepath.Join(directory, afterStop.ImageName)); err != nil {
+		t.Fatalf("cleanup continued after cancellation: %v", err)
+	}
+}
+
+func TestCleanupIntervalUsesHourlyDefaultAndStaysWithinRetention(t *testing.T) {
+	if got := snapshots.CleanupInterval(72*time.Hour, 0); got != time.Hour {
+		t.Fatalf("default interval = %s, want 1h", got)
+	}
+	if got := snapshots.CleanupInterval(2*time.Hour, 4*time.Hour); got != time.Hour {
+		t.Fatalf("bounded interval = %s, want 1h", got)
+	}
+	if got := snapshots.CleanupInterval(72*time.Hour, 10*time.Minute); got != 10*time.Minute {
+		t.Fatalf("configured interval = %s, want 10m", got)
+	}
+}
+
+func eventually(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("condition was not met")
+}

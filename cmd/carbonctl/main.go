@@ -34,6 +34,7 @@ type config struct {
 	historyURL         string
 	snapshotDirectory  string
 	snapshotRetention  time.Duration
+	snapshotCleanup    time.Duration
 	telegramAPIURL     string
 	telegramTokenFile  string
 	telegramChatFile   string
@@ -51,6 +52,7 @@ func main() {
 	flag.StringVar(&configuration.historyURL, "history-url", "", "printer history URL")
 	flag.StringVar(&configuration.snapshotDirectory, "snapshot-dir", "", "retained snapshot directory")
 	flag.DurationVar(&configuration.snapshotRetention, "snapshot-retention", 72*time.Hour, "retained snapshot lifetime")
+	flag.DurationVar(&configuration.snapshotCleanup, "snapshot-cleanup-interval", 0, "snapshot cleanup cadence (default: hourly, bounded by retention)")
 	flag.StringVar(&configuration.telegramAPIURL, "telegram-api-url", "", "Telegram Bot API base URL")
 	flag.StringVar(&configuration.telegramTokenFile, "telegram-token-file", "", "Telegram bot token file")
 	flag.StringVar(&configuration.telegramChatFile, "telegram-chat-file", "", "authorized Telegram chat ID file")
@@ -88,6 +90,10 @@ func run(configuration config) error {
 	if err := archive.Cleanup(ctx, configuration.snapshotRetention); err != nil {
 		return err
 	}
+	cleanupInterval := snapshots.CleanupInterval(configuration.snapshotRetention, configuration.snapshotCleanup)
+	go snapshots.RunCleanup(ctx, archive, configuration.snapshotRetention, cleanupInterval, func(err error) {
+		slog.Warn("snapshot retention cleanup failed", "error", err)
+	})
 	client := &http.Client{Timeout: server.SnapshotTimeout}
 	observer := printer.Observer(store)
 	if configuration.telegramTokenFile != "" || configuration.telegramChatFile != "" {

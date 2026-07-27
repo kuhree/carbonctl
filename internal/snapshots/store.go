@@ -16,6 +16,8 @@ import (
 
 const filePrefix = "carbonctl-snapshot-"
 
+const defaultCleanupInterval = time.Hour
+
 type Metadata struct {
 	TakenAt     time.Time `json:"taken_at"`
 	TaskID      string    `json:"task_id,omitempty"`
@@ -27,6 +29,48 @@ type Metadata struct {
 type Store struct {
 	Directory string
 	Now       func() time.Time
+}
+
+func RunCleanup(
+	ctx context.Context,
+	store Store,
+	retention time.Duration,
+	interval time.Duration,
+	report func(error),
+) {
+	if retention <= 0 || interval <= 0 {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := store.Cleanup(ctx, retention); err != nil && report != nil {
+				report(err)
+			}
+		}
+	}
+}
+
+func CleanupInterval(retention, configured time.Duration) time.Duration {
+	if retention <= 0 {
+		return 0
+	}
+	interval := configured
+	if interval <= 0 {
+		interval = defaultCleanupInterval
+	}
+	maximum := retention / 2
+	if maximum <= 0 {
+		maximum = retention
+	}
+	if interval > maximum {
+		return maximum
+	}
+	return interval
 }
 
 func (store Store) List(ctx context.Context) ([]Metadata, error) {

@@ -270,6 +270,43 @@ func TestProcessExpiresRetainedSnapshotsAtStartup(t *testing.T) {
 	}
 }
 
+func TestProcessPeriodicallyExpiresSnapshotsWithoutCapture(t *testing.T) {
+	snapshotDir := filepath.Join(t.TempDir(), "snapshots")
+	unrelated := filepath.Join(snapshotDir, "keep.txt")
+	if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unrelated, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	address := freeAddress(t)
+	process := startProcessWithArgs(t, address,
+		"-printer-url", "ws://127.0.0.1:1/websocket",
+		"-state", filepath.Join(t.TempDir(), "state.json"),
+		"-snapshot-dir", snapshotDir,
+		"-snapshot-retention", "1h",
+		"-snapshot-cleanup-interval", "5ms",
+	)
+	waitForHTTP(t, "http://"+address+"/health", process)
+
+	expired, err := (snapshots.Store{Directory: snapshotDir}).Save(
+		context.Background(),
+		[]byte("\xff\xd8old\xff\xd9"),
+		snapshots.Metadata{TakenAt: time.Now().Add(-2 * time.Hour), TaskID: "idle-task"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventuallyProcess(t, func() bool {
+		_, imageErr := os.Stat(filepath.Join(snapshotDir, expired.ImageName))
+		_, sidecarErr := os.Stat(filepath.Join(snapshotDir, expired.SidecarName))
+		return os.IsNotExist(imageErr) && os.IsNotExist(sidecarErr)
+	})
+	if _, err := os.Stat(unrelated); err != nil {
+		t.Fatalf("unrelated file removed: %v", err)
+	}
+}
+
 func freeAddress(t *testing.T) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -417,4 +454,16 @@ func assertJSON(t *testing.T, url string, want map[string]any) {
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("%s = %#v, want %#v", url, got, want)
 	}
+}
+
+func eventuallyProcess(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("condition was not met")
 }
