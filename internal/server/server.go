@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/printer"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
 	HeaderTimeout             = 5 * time.Second
 	ShutdownTimeout           = 5 * time.Second
 	ReadTimeout               = 10 * time.Second
-	WriteTimeout              = 30 * time.Second
+	WriteTimeout              = 6 * time.Minute
 	IdleTimeout               = 60 * time.Second
 	DefaultTelemetryFreshness = 90 * time.Second
 )
@@ -27,9 +28,10 @@ type StatusSource interface {
 }
 
 type options struct {
-	now       func() time.Time
-	freshness time.Duration
-	tools     []Tool
+	now         func() time.Time
+	freshness   time.Duration
+	tools       []Tool
+	officialMCP bool
 }
 
 type Option func(*options)
@@ -39,6 +41,12 @@ func WithTelemetryFreshness(freshness time.Duration) Option {
 		if freshness > 0 {
 			configuration.freshness = freshness
 		}
+	}
+}
+
+func WithOfficialMCP() Option {
+	return func(configuration *options) {
+		configuration.officialMCP = true
 	}
 }
 
@@ -63,7 +71,7 @@ func New(source StatusSource, supplied ...Option) http.Handler {
 	mux.HandleFunc("GET /identity", jsonHandler(map[string]any{
 		"name": "carbonctl-mcp", "version": "1",
 	}))
-	mux.HandleFunc("POST /mcp", func(writer http.ResponseWriter, request *http.Request) {
+	legacyMCP := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var incoming struct {
 			JSONRPC string          `json:"jsonrpc"`
 			ID      json.RawMessage `json:"id"`
@@ -125,6 +133,14 @@ func New(source StatusSource, supplied ...Option) http.Handler {
 		}
 		writeJSON(writer, response)
 	})
+	if configuration.officialMCP {
+		mcpServer := NewMCPServer(source, configuration.tools...)
+		mux.Handle("/mcp", mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+			return mcpServer
+		}, nil))
+	} else {
+		mux.Handle("POST /mcp", legacyMCP)
+	}
 	return mux
 }
 

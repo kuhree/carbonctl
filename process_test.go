@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/snapshots"
 )
@@ -347,40 +348,44 @@ func (process *testProcess) stop() {
 
 func callTool(t *testing.T, url, name string) map[string]any {
 	t.Helper()
-	response, err := http.Post(url, "application/json", strings.NewReader(fmt.Sprintf(
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":%q,"arguments":{}}}`, name,
-	)))
+	session := connectHTTPMCP(t, url, nil)
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: name, Arguments: map[string]any{},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
-	var payload struct {
-		Result map[string]any `json:"result"`
-	}
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		t.Fatal(err)
-	}
-	return payload.Result
+	return toolResultMap(t, result)
 }
 
 func callStatus(t *testing.T, url string) map[string]any {
 	t.Helper()
-	response, err := http.Post(url, "application/json", strings.NewReader(
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"carbonctl_get_status","arguments":{}}}`,
-	))
+	result := callTool(t, url, "carbonctl_get_status")
+	return result["structuredContent"].(map[string]any)
+}
+
+func connectHTTPMCP(t *testing.T, url string, options *mcp.ClientOptions) *mcp.ClientSession {
+	t.Helper()
+	client := mcp.NewClient(&mcp.Implementation{Name: "carbonctl-process-test", Version: "1"}, options)
+	session, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{Endpoint: url}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
-	var payload struct {
-		Result struct {
-			Structured map[string]any `json:"structuredContent"`
-		} `json:"result"`
-	}
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+	t.Cleanup(func() { _ = session.Close() })
+	return session
+}
+
+func toolResultMap(t *testing.T, result *mcp.CallToolResult) map[string]any {
+	t.Helper()
+	payload, err := json.Marshal(result)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return payload.Result.Structured
+	var converted map[string]any
+	if err := json.Unmarshal(payload, &converted); err != nil {
+		t.Fatal(err)
+	}
+	return converted
 }
 
 func waitForHTTP(t *testing.T, url string, processOutput io.Reader) {

@@ -132,6 +132,7 @@ func run(configuration config) error {
 	service := &http.Server{
 		Handler: server.New(store,
 			server.WithTelemetryFreshness(configuration.telemetryFreshness),
+			server.WithOfficialMCP(),
 			server.WithTools(media.Tools()...),
 			server.WithTools(server.Controls{Controller: controller}.Tools()...),
 		),

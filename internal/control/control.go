@@ -174,6 +174,26 @@ func (manager *Manager) ConfirmStop(ctx context.Context, token string) (Result, 
 	})
 }
 
+// DescribeStop validates a pending confirmation without consuming it so a
+// transport can name the exact print in a human approval prompt.
+func (manager *Manager) DescribeStop(token string) (PreparedStop, error) {
+	manager.mu.Lock()
+	prepared, ok := manager.confirmations[token]
+	manager.mu.Unlock()
+	if !ok || manager.now().After(prepared.expiresAt) {
+		return PreparedStop{}, ErrInvalidConfirmation
+	}
+	current := manager.source.Current()
+	if !current.Connected || current.TaskID != prepared.taskID ||
+		(current.State != "printing" && current.State != "paused") {
+		return PreparedStop{}, ErrInvalidConfirmation
+	}
+	return PreparedStop{
+		Token: token, TaskID: prepared.taskID, Filename: current.Filename,
+		ExpiresAt: prepared.expiresAt,
+	}, nil
+}
+
 func (manager *Manager) execute(
 	ctx context.Context,
 	action string,

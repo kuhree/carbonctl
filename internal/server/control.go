@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/control"
 )
@@ -13,6 +14,7 @@ type PrintController interface {
 	Pause(context.Context) (control.Result, error)
 	Resume(context.Context) (control.Result, error)
 	PrepareStop() (control.PreparedStop, error)
+	DescribeStop(string) (control.PreparedStop, error)
 	ConfirmStop(context.Context, string) (control.Result, error)
 }
 
@@ -85,6 +87,33 @@ func (controls Controls) confirmStop(ctx context.Context, arguments json.RawMess
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&input) != nil || requireEOF(decoder) != nil || input.Token == "" {
 		return toolError(errors.New("confirm stop requires only a non-empty token")), nil
+	}
+	prepared, err := controls.Controller.DescribeStop(input.Token)
+	if err != nil {
+		return toolError(err), nil
+	}
+	filename := prepared.Filename
+	if filename == "" {
+		filename = prepared.TaskID
+	}
+	quotedFilename := strconv.Quote(filename)
+	action, err := requestElicitation(ctx,
+		"Stop the active print "+quotedFilename+"?",
+		map[string]any{
+			"type": "object", "additionalProperties": false,
+			"properties": map[string]any{
+				"confirmation": map[string]any{
+					"type":        "boolean",
+					"description": "Approve stopping " + quotedFilename + ".",
+				},
+			},
+		},
+	)
+	if err != nil {
+		return toolError(errors.New("stop approval is unavailable")), nil
+	}
+	if action != "accept" {
+		return toolError(errors.New("stop was not approved")), nil
 	}
 	result, err := controls.Controller.ConfirmStop(ctx, input.Token)
 	return controlResult(result, err), nil

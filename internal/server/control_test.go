@@ -49,7 +49,7 @@ func TestControlToolsExposeOnlyTheApprovedMutationBoundary(t *testing.T) {
 	}
 }
 
-func TestControlToolsPauseAndConfirmStopThroughMCP(t *testing.T) {
+func TestLegacyTransportFailsClosedWithoutElicitation(t *testing.T) {
 	source := &mutableStatus{status: printer.Status{
 		Connected: true, State: "printing", TaskID: "task-42",
 		Filename: "benchy.gcode",
@@ -74,9 +74,11 @@ func TestControlToolsPauseAndConfirmStopThroughMCP(t *testing.T) {
 
 	stopped := callTool(t, handler, "carbonctl_confirm_stop",
 		`{"token":"`+token+`"}`)
-	assertOutcome(t, stopped, "confirmed")
-	if got := sender.sent(); len(got) != 2 || got[0] != 129 || got[1] != 130 {
-		t.Fatalf("commands = %v, want [129 130]", got)
+	if stopped["result"].(map[string]any)["isError"] != true {
+		t.Fatalf("stop response = %#v, want fail-closed tool error", stopped)
+	}
+	if got := sender.sent(); len(got) != 1 || got[0] != 129 {
+		t.Fatalf("commands = %v, want only [129]", got)
 	}
 }
 

@@ -7,7 +7,7 @@ buildGoModule {
   version = "0.1.0";
 
   src = ./.;
-  vendorHash = "sha256-0Qxw+MUYVgzgWB8vi3HBYtVXSq/btfh4ZfV/m1chNrA=";
+  vendorHash = "sha256-IJjfVgO/IU7/22RamaXhVjDzh4cEug3bO68O4mAwDUM=";
 
   subPackages = [ "cmd/carbonctl" ];
 

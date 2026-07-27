@@ -137,6 +137,35 @@ func TestPrepareAndConfirmStopIsTaskBoundAndSingleUse(t *testing.T) {
 	}
 }
 
+func TestDescribeStopDoesNotConsumeConfirmation(t *testing.T) {
+	statuses := &statusSource{status: printer.Status{
+		Connected: true, State: "printing", TaskID: "task-42",
+		Filename: "benchy.gcode",
+	}}
+	commands := &commandSender{afterSend: func(int) {
+		statuses.set(printer.Status{Connected: true, State: "idle"})
+	}}
+	manager := control.New(statuses, commands,
+		control.WithConfirmationTimeout(100*time.Millisecond),
+		control.WithPollInterval(time.Millisecond),
+	)
+	prepared, err := manager.PrepareStop()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	described, err := manager.DescribeStop(prepared.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if described.TaskID != "task-42" || described.Filename != "benchy.gcode" {
+		t.Fatalf("DescribeStop() = %#v", described)
+	}
+	if _, err := manager.ConfirmStop(context.Background(), prepared.Token); err != nil {
+		t.Fatalf("confirmation was consumed by description: %v", err)
+	}
+}
+
 func TestStopConfirmationExpiresAndRejectsAChangedTask(t *testing.T) {
 	tests := []struct {
 		name   string

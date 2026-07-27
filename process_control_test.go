@@ -1,7 +1,7 @@
 package carbonctl_test
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestProcessControlsFakePrinterThroughMCP(t *testing.T) {
@@ -63,18 +64,22 @@ func waitForConnected(t *testing.T, address string) {
 
 func processTool(t *testing.T, address, name, arguments string) map[string]any {
 	t.Helper()
-	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` +
-		name + `","arguments":` + arguments + `}}`
-	response, err := http.Post("http://"+address+"/mcp", "application/json", bytes.NewBufferString(request))
+	var input map[string]any
+	if err := json.Unmarshal([]byte(arguments), &input); err != nil {
+		t.Fatal(err)
+	}
+	session := connectHTTPMCP(t, "http://"+address+"/mcp", &mcp.ClientOptions{
+		ElicitationHandler: func(context.Context, *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+			return &mcp.ElicitResult{Action: "accept", Content: map[string]any{}}, nil
+		},
+	})
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: name, Arguments: input,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
-	var payload map[string]any
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		t.Fatal(err)
-	}
-	return payload
+	return map[string]any{"result": toolResultMap(t, result)}
 }
 
 func outcome(response map[string]any) string {
