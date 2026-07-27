@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -20,27 +22,29 @@ import (
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/snapshots"
 )
 
+var processTestBinary string
+
+func TestMain(main *testing.M) {
+	directory, err := os.MkdirTemp("", "carbonctl-process-test-*")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	processTestBinary = filepath.Join(directory, "carbonctl")
+	build := exec.Command("go", "build", "-o", processTestBinary, "./cmd/carbonctl")
+	if output, buildErr := build.CombinedOutput(); buildErr != nil {
+		fmt.Fprintf(os.Stderr, "build carbonctl process-test binary: %v\n%s", buildErr, output)
+		_ = os.RemoveAll(directory)
+		os.Exit(1)
+	}
+	code := main.Run()
+	_ = os.RemoveAll(directory)
+	os.Exit(code)
+}
+
 func TestProcessExposesBoundedOperationalStatus(t *testing.T) {
 	address := freeAddress(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	command := exec.CommandContext(ctx, "go", "run", "./cmd/carbonctl",
-		"-listen", address,
-		"-printer-url", "ws://127.0.0.1:1/websocket",
-		"-state", filepath.Join(t.TempDir(), "state.json"),
-	)
-	output, err := command.StderrPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		cancel()
-		_ = command.Wait()
-	})
+	output := startProcess(t, address, "ws://127.0.0.1:1/websocket", filepath.Join(t.TempDir(), "state.json"))
 
 	waitForHTTP(t, "http://"+address+"/health", output)
 	assertJSON(t, "http://"+address+"/health", map[string]any{"status": "ok"})
@@ -50,6 +54,23 @@ func TestProcessExposesBoundedOperationalStatus(t *testing.T) {
 	assertJSON(t, "http://"+address+"/ready", map[string]any{
 		"status": "unavailable", "printer_connected": false,
 	})
+}
+
+func TestProcessHarnessOwnsAndTerminatesTheServiceProcess(t *testing.T) {
+	process := launchProcess(t,
+		"-listen", freeAddress(t),
+		"-printer-url", "ws://127.0.0.1:1/websocket",
+		"-state", filepath.Join(t.TempDir(), "state.json"),
+	)
+	pid := process.command.Process.Pid
+	process.stop()
+
+	if process.command.ProcessState == nil {
+		t.Fatalf("directly owned process %d was not reaped", pid)
+	}
+	if err := process.command.Process.Signal(os.Signal(syscall.Signal(0))); err == nil {
+		t.Fatalf("process %d remains alive after harness cleanup", pid)
+	}
 }
 
 func TestActivePrintIsNormalizedThroughMCP(t *testing.T) {
@@ -281,41 +302,47 @@ func fakePrinter(t *testing.T, message string) string {
 
 func startProcess(t *testing.T, address, printerURL, statePath string) io.Reader {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	command := exec.CommandContext(ctx, "go", "run", "./cmd/carbonctl",
+	return launchProcess(t,
 		"-listen", address, "-printer-url", printerURL, "-state", statePath,
-	)
-	output, err := command.StderrPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		cancel()
-		_ = command.Wait()
-	})
-	return output
+	).output
 }
 
 func startProcessWithArgs(t *testing.T, address string, arguments ...string) io.Reader {
 	t.Helper()
+	args := append([]string{"-listen", address}, arguments...)
+	return launchProcess(t, args...).output
+}
+
+type testProcess struct {
+	command  *exec.Cmd
+	output   io.Reader
+	cancel   context.CancelFunc
+	stopOnce sync.Once
+}
+
+func launchProcess(t *testing.T, arguments ...string) *testProcess {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	args := append([]string{"run", "./cmd/carbonctl", "-listen", address}, arguments...)
-	command := exec.CommandContext(ctx, "go", args...)
+	command := exec.CommandContext(ctx, processTestBinary, arguments...)
 	output, err := command.StderrPipe()
 	if err != nil {
+		cancel()
 		t.Fatal(err)
 	}
 	if err := command.Start(); err != nil {
+		cancel()
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		cancel()
-		_ = command.Wait()
+	process := &testProcess{command: command, output: output, cancel: cancel}
+	t.Cleanup(process.stop)
+	return process
+}
+
+func (process *testProcess) stop() {
+	process.stopOnce.Do(func() {
+		process.cancel()
+		_ = process.command.Wait()
 	})
-	return output
 }
 
 func callTool(t *testing.T, url, name string) map[string]any {
