@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -14,6 +16,8 @@ import (
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/camera"
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/control"
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/history"
+	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/lifecycle"
+	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/notifications"
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/printer"
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/server"
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/snapshots"
@@ -29,6 +33,9 @@ type config struct {
 	historyURL         string
 	snapshotDirectory  string
 	snapshotRetention  time.Duration
+	telegramAPIURL     string
+	telegramTokenFile  string
+	telegramChatFile   string
 }
 
 func main() {
@@ -41,6 +48,9 @@ func main() {
 	flag.StringVar(&configuration.historyURL, "history-url", "", "printer history URL")
 	flag.StringVar(&configuration.snapshotDirectory, "snapshot-dir", "", "retained snapshot directory")
 	flag.DurationVar(&configuration.snapshotRetention, "snapshot-retention", 72*time.Hour, "retained snapshot lifetime")
+	flag.StringVar(&configuration.telegramAPIURL, "telegram-api-url", "", "Telegram Bot API base URL")
+	flag.StringVar(&configuration.telegramTokenFile, "telegram-token-file", "", "Telegram bot token file")
+	flag.StringVar(&configuration.telegramChatFile, "telegram-chat-file", "", "authorized Telegram chat ID file")
 	flag.Parse()
 
 	if err := run(configuration); err != nil {
@@ -71,17 +81,46 @@ func run(configuration config) error {
 	if err != nil {
 		return err
 	}
-	go func() {
-		if err := (printer.Client{URL: configuration.printerURL, Observer: store}).Run(ctx); err != nil {
-			slog.Error("printer observation stopped", "error", err)
-			stop()
-		}
-	}()
 	archive := snapshots.Store{Directory: configuration.snapshotDirectory}
 	if err := archive.Cleanup(ctx, configuration.snapshotRetention); err != nil {
 		return err
 	}
 	client := &http.Client{Timeout: server.SnapshotTimeout}
+	observer := printer.Observer(store)
+	if configuration.telegramTokenFile != "" || configuration.telegramChatFile != "" {
+		if configuration.telegramTokenFile == "" || configuration.telegramChatFile == "" {
+			return errors.New("both Telegram credential files are required")
+		}
+		token, err := readCredential(configuration.telegramTokenFile)
+		if err != nil {
+			return errors.New("read Telegram token")
+		}
+		chatID, err := readCredential(configuration.telegramChatFile)
+		if err != nil {
+			return errors.New("read Telegram chat identity")
+		}
+		engine := lifecycle.New(store, lifecycle.RetainedSnapshots{
+			Camera:  camera.Client{URL: configuration.cameraURL, HTTPClient: client},
+			Archive: archive, Retention: configuration.snapshotRetention,
+			Timeout: server.SnapshotTimeout,
+		}, notifications.Telegram{
+			BaseURL: configuration.telegramAPIURL, Token: token, ChatID: chatID,
+			HTTPClient: client,
+		})
+		observer = lifecycle.Observer{Context: ctx, Engine: engine}
+		go func() {
+			if err := engine.Run(ctx); err != nil {
+				slog.Error("printer lifecycle monitoring stopped", "error", err)
+				stop()
+			}
+		}()
+	}
+	go func() {
+		if err := (printer.Client{URL: configuration.printerURL, Observer: observer}).Run(ctx); err != nil {
+			slog.Error("printer observation stopped", "error", err)
+			stop()
+		}
+	}()
 	media := server.Media{
 		Camera:    camera.Client{URL: configuration.cameraURL, HTTPClient: client},
 		Archive:   archive,
@@ -108,4 +147,24 @@ func run(configuration config) error {
 		_ = service.Shutdown(shutdownCtx)
 	}()
 	return service.Serve(listener)
+}
+
+func readCredential(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	payload, err := io.ReadAll(io.LimitReader(file, 1025))
+	if err != nil || len(payload) > 1024 {
+		return "", errors.New("credential is unreadable or too large")
+	}
+	value := string(payload)
+	for len(value) > 0 && (value[len(value)-1] == '\n' || value[len(value)-1] == '\r') {
+		value = value[:len(value)-1]
+	}
+	if value == "" {
+		return "", errors.New("credential is empty")
+	}
+	return value, nil
 }

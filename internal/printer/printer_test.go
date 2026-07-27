@@ -47,6 +47,20 @@ func TestStatusNormalizationExposesPausedTaskAndBoardIdentityForControls(t *test
 	}
 }
 
+func TestStatusNormalizationExposesPrintError(t *testing.T) {
+	status, err := printer.ParseStatus([]byte(`{
+		"Status":{"CurrentStatus":[1],"PrintInfo":{
+			"TaskId":"task-error","Filename":"cube.gcode","ErrorNumber":3
+		}}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != "error" || status.ErrorNumber != 3 {
+		t.Fatalf("status = %#v", status)
+	}
+}
+
 func TestClientBoundsEachWebSocketDialAttempt(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

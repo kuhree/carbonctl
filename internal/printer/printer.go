@@ -36,6 +36,7 @@ type Status struct {
 	TotalLayers           int          `json:"total_layers,omitempty"`
 	ElapsedSeconds        int          `json:"elapsed_seconds,omitempty"`
 	EstimatedTotalSeconds int          `json:"estimated_total_seconds,omitempty"`
+	ErrorNumber           int          `json:"error_number,omitempty"`
 	Temperatures          Temperatures `json:"temperatures"`
 	ObservedAt            time.Time    `json:"-"`
 }
@@ -138,6 +139,10 @@ func ParseStatus(payload []byte) (Status, error) {
 	case 9:
 		state = "complete"
 	}
+	errorNumber := integer(printNode, "ErrorNumber")
+	if errorNumber != 0 {
+		state = "error"
+	}
 	return Status{
 		State:                 state,
 		MainboardID:           text(document, "MainboardID"),
@@ -148,6 +153,7 @@ func ParseStatus(payload []byte) (Status, error) {
 		TotalLayers:           integer(printNode, "TotalLayer", "TotalLayers"),
 		ElapsedSeconds:        integer(printNode, "CurrentTicks"),
 		EstimatedTotalSeconds: integer(printNode, "TotalTicks"),
+		ErrorNumber:           errorNumber,
 		Temperatures: Temperatures{
 			Nozzle:       number(statusNode, "TempOfNozzle"),
 			NozzleTarget: number(statusNode, "TempTargetNozzle"),
