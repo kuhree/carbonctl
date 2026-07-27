@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/camera"
+	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/control"
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/history"
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/printer"
 	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/server"
@@ -88,10 +89,12 @@ func run(configuration config) error {
 		Status:    store,
 		Retention: configuration.snapshotRetention,
 	}
+	controller := control.New(store, printer.Commander{URL: configuration.printerURL})
 	service := &http.Server{
 		Handler: server.New(store,
 			server.WithTelemetryFreshness(configuration.telemetryFreshness),
 			server.WithTools(media.Tools()...),
+			server.WithTools(server.Controls{Controller: controller}.Tools()...),
 		),
 		ReadHeaderTimeout: server.HeaderTimeout,
 		ReadTimeout:       server.ReadTimeout,

@@ -56,6 +56,24 @@ func TestPauseSendsOnceAndConfirmsFromTelemetry(t *testing.T) {
 	}
 }
 
+func TestPauseRechecksStateImmediatelyBeforeSending(t *testing.T) {
+	source := &changingStatusSource{statuses: []printer.Status{
+		{Connected: true, State: "printing", TaskID: "task-42"},
+		{Connected: true, State: "idle", TaskID: "task-42"},
+	}}
+	commands := &commandSender{}
+	manager := control.New(source, commands)
+
+	_, err := manager.Pause(context.Background())
+
+	if !errors.Is(err, control.ErrNotPrinting) {
+		t.Fatalf("Pause() error = %v, want ErrNotPrinting", err)
+	}
+	if commands.count() != 0 {
+		t.Fatalf("sent %d commands, want none", commands.count())
+	}
+}
+
 func TestResumeTimesOutWithoutReplayingMutation(t *testing.T) {
 	statuses := &statusSource{status: printer.Status{
 		Connected: true, State: "paused", TaskID: "task-42",
@@ -171,6 +189,21 @@ func TestStopConfirmationExpiresAndRejectsAChangedTask(t *testing.T) {
 type statusSource struct {
 	mu     sync.RWMutex
 	status printer.Status
+}
+
+type changingStatusSource struct {
+	mu       sync.Mutex
+	statuses []printer.Status
+}
+
+func (source *changingStatusSource) Current() printer.Status {
+	source.mu.Lock()
+	defer source.mu.Unlock()
+	status := source.statuses[0]
+	if len(source.statuses) > 1 {
+		source.statuses = source.statuses[1:]
+	}
+	return status
 }
 
 func (source *statusSource) Current() printer.Status {

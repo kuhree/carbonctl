@@ -114,6 +114,8 @@ func (manager *Manager) Pause(ctx context.Context) (Result, error) {
 		return Result{}, ErrNotPrinting
 	}
 	return manager.execute(ctx, "pause", pauseCommand, current.TaskID, func(status printer.Status) bool {
+		return status.Connected && status.TaskID == current.TaskID && status.State == "printing"
+	}, ErrNotPrinting, func(status printer.Status) bool {
 		return status.Connected && status.TaskID == current.TaskID && status.State == "paused"
 	})
 }
@@ -124,6 +126,8 @@ func (manager *Manager) Resume(ctx context.Context) (Result, error) {
 		return Result{}, ErrNotPaused
 	}
 	return manager.execute(ctx, "resume", resumeCommand, current.TaskID, func(status printer.Status) bool {
+		return status.Connected && status.TaskID == current.TaskID && status.State == "paused"
+	}, ErrNotPaused, func(status printer.Status) bool {
 		return status.Connected && status.TaskID == current.TaskID && status.State == "printing"
 	})
 }
@@ -162,6 +166,9 @@ func (manager *Manager) ConfirmStop(ctx context.Context, token string) (Result, 
 		return Result{}, ErrInvalidConfirmation
 	}
 	return manager.execute(ctx, "stop", stopCommand, current.TaskID, func(status printer.Status) bool {
+		return status.Connected && status.TaskID == current.TaskID &&
+			(status.State == "printing" || status.State == "paused")
+	}, ErrInvalidConfirmation, func(status printer.Status) bool {
 		return status.TaskID != current.TaskID ||
 			status.State == "idle" || status.State == "stopped" || status.State == "complete"
 	})
@@ -172,11 +179,13 @@ func (manager *Manager) execute(
 	action string,
 	command int,
 	taskID string,
+	allowed func(printer.Status) bool,
+	preconditionError error,
 	confirmed func(printer.Status) bool,
 ) (Result, error) {
 	current := manager.source.Current()
-	if current.TaskID != taskID {
-		return Result{}, ErrInvalidConfirmation
+	if !allowed(current) {
+		return Result{}, preconditionError
 	}
 	if err := manager.sender.Send(ctx, command, current); err != nil {
 		return Result{}, err
