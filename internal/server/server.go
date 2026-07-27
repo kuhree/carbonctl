@@ -4,6 +4,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -11,8 +12,12 @@ import (
 )
 
 const (
-	HeaderTimeout   = 5 * time.Second
-	ShutdownTimeout = 5 * time.Second
+	HeaderTimeout             = 5 * time.Second
+	ShutdownTimeout           = 5 * time.Second
+	ReadTimeout               = 10 * time.Second
+	WriteTimeout              = 30 * time.Second
+	IdleTimeout               = 60 * time.Second
+	DefaultTelemetryFreshness = 90 * time.Second
 )
 
 var ErrNonLoopback = errors.New("carbonctl listener must use a loopback address")
@@ -21,13 +26,35 @@ type StatusSource interface {
 	Current() printer.Status
 }
 
-func New(source StatusSource) http.Handler {
+type options struct {
+	now       func() time.Time
+	freshness time.Duration
+}
+
+type Option func(*options)
+
+func WithTelemetryFreshness(freshness time.Duration) Option {
+	return func(configuration *options) {
+		if freshness > 0 {
+			configuration.freshness = freshness
+		}
+	}
+}
+
+func New(source StatusSource, supplied ...Option) http.Handler {
+	configuration := options{now: time.Now, freshness: DefaultTelemetryFreshness}
+	for _, option := range supplied {
+		option(&configuration)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", jsonHandler(map[string]any{"status": "ok"}))
 	mux.HandleFunc("GET /ready", func(writer http.ResponseWriter, _ *http.Request) {
-		connected := source.Current().Connected
+		current := source.Current()
+		connected := current.Connected
+		fresh := !current.ObservedAt.IsZero() &&
+			configuration.now().Sub(current.ObservedAt) <= configuration.freshness
 		status := "unavailable"
-		if connected {
+		if connected && fresh {
 			status = "ready"
 		}
 		writeJSON(writer, map[string]any{"status": status, "printer_connected": connected})
@@ -45,7 +72,7 @@ func New(source StatusSource) http.Handler {
 			} `json:"params"`
 		}
 		decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 64<<10))
-		if decoder.Decode(&incoming) != nil || incoming.JSONRPC != "2.0" {
+		if decoder.Decode(&incoming) != nil || requireEOF(decoder) != nil || incoming.JSONRPC != "2.0" {
 			writeJSON(writer, map[string]any{"jsonrpc": "2.0", "error": map[string]any{
 				"code": -32700, "message": "invalid JSON-RPC request",
 			}})
@@ -81,6 +108,14 @@ func New(source StatusSource) http.Handler {
 		writeJSON(writer, response)
 	})
 	return mux
+}
+
+func requireEOF(decoder *json.Decoder) error {
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return errors.New("JSON request must contain exactly one value")
+	}
+	return nil
 }
 
 func jsonHandler(value any) http.HandlerFunc {

@@ -48,6 +48,7 @@ func Open(path string) (*Store, error) {
 		return nil, errors.New("carbonctl state version is unsupported")
 	}
 	store.current = saved.Current
+	store.current.Connected = false
 	store.current.ObservedAt = saved.LastObservation
 	store.disconnectedAt = saved.DisconnectedAt
 	for taskID, values := range saved.SentMilestones {
@@ -59,22 +60,37 @@ func Open(path string) (*Store, error) {
 	return store, nil
 }
 
-func (store *Store) Observe(status printer.Status) {
+func (store *Store) Observe(status printer.Status) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	store.current = status
-	store.disconnectedAt = time.Time{}
-	store.persistLocked()
+	document := store.documentLocked()
+	document.Current = status
+	document.LastObservation = status.ObservedAt
+	document.DisconnectedAt = time.Time{}
+	if err := store.persistLocked(document); err != nil {
+		return err
+	}
+	store.current, store.disconnectedAt = status, time.Time{}
+	return nil
 }
 
-func (store *Store) Disconnected() {
+func (store *Store) Disconnected() error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	store.current.Connected = false
-	if store.disconnectedAt.IsZero() {
-		store.disconnectedAt = time.Now().UTC()
+	current := store.current
+	current.Connected = false
+	disconnectedAt := store.disconnectedAt
+	if disconnectedAt.IsZero() {
+		disconnectedAt = time.Now().UTC()
 	}
-	store.persistLocked()
+	document := store.documentLocked()
+	document.Current = current
+	document.DisconnectedAt = disconnectedAt
+	if err := store.persistLocked(document); err != nil {
+		return err
+	}
+	store.current, store.disconnectedAt = current, disconnectedAt
+	return nil
 }
 
 func (store *Store) Current() printer.Status {
@@ -83,14 +99,20 @@ func (store *Store) Current() printer.Status {
 	return store.current
 }
 
-func (store *Store) MarkMilestone(taskID string, milestone int) {
+func (store *Store) MarkMilestone(taskID string, milestone int) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	document := store.documentLocked()
+	values := append(document.SentMilestones[taskID], milestone)
+	document.SentMilestones[taskID] = values
+	if err := store.persistLocked(document); err != nil {
+		return err
+	}
 	if store.milestones[taskID] == nil {
 		store.milestones[taskID] = make(map[int]bool)
 	}
 	store.milestones[taskID][milestone] = true
-	store.persistLocked()
+	return nil
 }
 
 func (store *Store) MilestoneSent(taskID string, milestone int) bool {
@@ -99,12 +121,18 @@ func (store *Store) MilestoneSent(taskID string, milestone int) bool {
 	return store.milestones[taskID][milestone]
 }
 
-func (store *Store) DisconnectedAt(at time.Time) {
+func (store *Store) DisconnectedAt(at time.Time) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	store.current.Connected = false
-	store.disconnectedAt = at
-	store.persistLocked()
+	current := store.current
+	current.Connected = false
+	document := store.documentLocked()
+	document.Current, document.DisconnectedAt = current, at
+	if err := store.persistLocked(document); err != nil {
+		return err
+	}
+	store.current, store.disconnectedAt = current, at
+	return nil
 }
 
 func (store *Store) LastDisconnectedAt() time.Time {
@@ -113,47 +141,50 @@ func (store *Store) LastDisconnectedAt() time.Time {
 	return store.disconnectedAt
 }
 
-func (store *Store) persistLocked() {
-	if store.path == "" {
-		return
-	}
+func (store *Store) documentLocked() document {
 	milestones := make(map[string][]int, len(store.milestones))
 	for taskID, values := range store.milestones {
 		for milestone := range values {
 			milestones[taskID] = append(milestones[taskID], milestone)
 		}
 	}
-	payload, err := json.Marshal(document{
+	return document{
 		Version: 1, Current: store.current, LastObservation: store.current.ObservedAt,
-		SentMilestones: milestones,
-		DisconnectedAt: store.disconnectedAt,
-	})
+		SentMilestones: milestones, DisconnectedAt: store.disconnectedAt,
+	}
+}
+
+func (store *Store) persistLocked(saved document) error {
+	if store.path == "" {
+		return nil
+	}
+	payload, err := json.Marshal(saved)
 	if err != nil {
-		return
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(store.path), 0o700); err != nil {
-		return
+		return err
 	}
 	temporary, err := os.CreateTemp(filepath.Dir(store.path), ".carbonctl-state-*")
 	if err != nil {
-		return
+		return err
 	}
 	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath)
 	if err := temporary.Chmod(0o600); err != nil {
 		_ = temporary.Close()
-		return
+		return err
 	}
 	if _, err := temporary.Write(payload); err != nil {
 		_ = temporary.Close()
-		return
+		return err
 	}
 	if err := temporary.Sync(); err != nil {
 		_ = temporary.Close()
-		return
+		return err
 	}
 	if err := temporary.Close(); err != nil {
-		return
+		return err
 	}
-	_ = os.Rename(temporaryPath, store.path)
+	return os.Rename(temporaryPath, store.path)
 }

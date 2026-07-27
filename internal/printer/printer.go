@@ -14,6 +14,7 @@ import (
 const (
 	maxMessageBytes = 1 << 20
 	readTimeout     = 45 * time.Second
+	dialTimeout     = 500 * time.Millisecond
 )
 
 type Temperatures struct {
@@ -39,8 +40,8 @@ type Status struct {
 }
 
 type Observer interface {
-	Observe(Status)
-	Disconnected()
+	Observe(Status) error
+	Disconnected() error
 }
 
 type Client struct {
@@ -48,28 +49,35 @@ type Client struct {
 	Observer Observer
 }
 
-func (client Client) Run(ctx context.Context) {
+func (client Client) Run(ctx context.Context) error {
 	backoff := 100 * time.Millisecond
 	for ctx.Err() == nil {
 		if err := client.read(ctx); err == nil || ctx.Err() != nil {
-			return
+			return nil
 		}
-		client.Observer.Disconnected()
+		if err := client.Observer.Disconnected(); err != nil {
+			return err
+		}
 		timer := time.NewTimer(backoff)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return
+			return nil
 		case <-timer.C:
 		}
 		if backoff < 5*time.Second {
 			backoff *= 2
 		}
 	}
+	return nil
 }
 
 func (client Client) read(ctx context.Context) error {
-	connection, _, err := websocket.DefaultDialer.DialContext(ctx, client.URL, nil)
+	attemptContext, cancel := context.WithTimeout(ctx, dialTimeout)
+	defer cancel()
+	dialer := *websocket.DefaultDialer
+	dialer.HandshakeTimeout = dialTimeout
+	connection, _, err := dialer.DialContext(attemptContext, client.URL, nil)
 	if err != nil {
 		return err
 	}
@@ -92,7 +100,9 @@ func (client Client) read(ctx context.Context) error {
 		}
 		status.Connected = true
 		status.ObservedAt = time.Now().UTC()
-		client.Observer.Observe(status)
+		if err := client.Observer.Observe(status); err != nil {
+			return err
+		}
 	}
 }
 

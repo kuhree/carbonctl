@@ -2,6 +2,7 @@ package printer_test
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,6 +28,36 @@ func TestStatusNormalizationAcceptsDocumentedAlternateNesting(t *testing.T) {
 		status.TotalLayers != 9 || status.Temperatures.Nozzle != 201 ||
 		status.Temperatures.Bed != 58 {
 		t.Fatalf("normalized status = %#v", status)
+	}
+}
+
+func TestClientBoundsEachWebSocketDialAttempt(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		connection, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			defer connection.Close()
+			<-time.After(2 * time.Second)
+		}
+	}()
+
+	observer := &disconnectObserver{disconnected: make(chan struct{}, 1)}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		_ = (printer.Client{
+			URL: "ws://" + listener.Addr().String(), Observer: observer,
+		}).Run(ctx)
+	}()
+
+	select {
+	case <-observer.disconnected:
+	case <-time.After(time.Second):
+		t.Fatal("WebSocket dial attempt exceeded its bounded timeout")
 	}
 }
 
@@ -72,8 +103,23 @@ type recordingObserver struct {
 	observations chan printer.Status
 }
 
-func (observer *recordingObserver) Observe(status printer.Status) {
+func (observer *recordingObserver) Observe(status printer.Status) error {
 	observer.observations <- status
+	return nil
 }
 
-func (observer *recordingObserver) Disconnected() {}
+func (observer *recordingObserver) Disconnected() error { return nil }
+
+type disconnectObserver struct {
+	disconnected chan struct{}
+}
+
+func (observer *disconnectObserver) Observe(printer.Status) error { return nil }
+
+func (observer *disconnectObserver) Disconnected() error {
+	select {
+	case observer.disconnected <- struct{}{}:
+	default:
+	}
+	return nil
+}
