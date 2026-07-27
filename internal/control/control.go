@@ -35,7 +35,7 @@ type StatusSource interface {
 }
 
 type Sender interface {
-	Send(context.Context, int) error
+	Send(context.Context, int, printer.Status) error
 }
 
 type Outcome string
@@ -174,7 +174,11 @@ func (manager *Manager) execute(
 	taskID string,
 	confirmed func(printer.Status) bool,
 ) (Result, error) {
-	if err := manager.sender.Send(ctx, command); err != nil {
+	current := manager.source.Current()
+	if current.TaskID != taskID {
+		return Result{}, ErrInvalidConfirmation
+	}
+	if err := manager.sender.Send(ctx, command, current); err != nil {
 		return Result{}, err
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, manager.confirmationTimeout)

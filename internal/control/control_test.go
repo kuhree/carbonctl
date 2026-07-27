@@ -192,7 +192,7 @@ type commandSender struct {
 	afterSend func(int)
 }
 
-func (sender *commandSender) Send(_ context.Context, command int) error {
+func (sender *commandSender) Send(_ context.Context, command int, _ printer.Status) error {
 	sender.mu.Lock()
 	sender.commands = append(sender.commands, command)
 	afterSend := sender.afterSend

@@ -31,6 +31,22 @@ func TestStatusNormalizationAcceptsDocumentedAlternateNesting(t *testing.T) {
 	}
 }
 
+func TestStatusNormalizationExposesPausedTaskAndBoardIdentityForControls(t *testing.T) {
+	status, err := printer.ParseStatus([]byte(`{
+		"MainboardID":"board-7",
+		"Status":{"CurrentStatus":[1],"PrintInfo":{
+			"Status":6,"TaskId":"task-42","Filename":"benchy.gcode"
+		}}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != "paused" || status.TaskID != "task-42" ||
+		status.MainboardID != "board-7" {
+		t.Fatalf("normalized paused status = %#v", status)
+	}
+}
+
 func TestClientBoundsEachWebSocketDialAttempt(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

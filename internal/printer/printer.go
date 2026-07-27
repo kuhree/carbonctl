@@ -28,6 +28,7 @@ type Temperatures struct {
 type Status struct {
 	Connected             bool         `json:"connected"`
 	State                 string       `json:"state"`
+	MainboardID           string       `json:"-"`
 	TaskID                string       `json:"task_id,omitempty"`
 	Filename              string       `json:"filename,omitempty"`
 	ProgressPercent       float64      `json:"progress_percent,omitempty"`
@@ -126,8 +127,20 @@ func ParseStatus(payload []byte) (Status, error) {
 	if !ok || len(current) == 0 {
 		return Status{}, errors.New("SDCP status has no machine state")
 	}
+	state := stateName(int(current[0]))
+	switch integer(printNode, "Status") {
+	case 6:
+		state = "paused"
+	case 7:
+		state = "stopping"
+	case 8:
+		state = "stopped"
+	case 9:
+		state = "complete"
+	}
 	return Status{
-		State:                 stateName(int(current[0])),
+		State:                 state,
+		MainboardID:           text(document, "MainboardID"),
 		TaskID:                text(printNode, "TaskId", "TaskID"),
 		Filename:              text(printNode, "Filename", "FileName"),
 		ProgressPercent:       number(printNode, "Progress"),
