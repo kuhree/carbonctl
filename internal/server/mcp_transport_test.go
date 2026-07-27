@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +23,17 @@ func TestConfirmStopRequiresAcceptedMCPFormElicitation(t *testing.T) {
 			name: "accept",
 			client: &mcp.ClientOptions{ElicitationHandler: func(_ context.Context, request *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
 				if !strings.Contains(request.Params.Message, "benchy.gcode") {
-					t.Fatalf("elicitation message = %q, want active filename", request.Params.Message)
+					return nil, fmt.Errorf("elicitation message = %q, want active filename", request.Params.Message)
+				}
+				schema, ok := request.Params.RequestedSchema.(map[string]any)
+				if !ok {
+					return nil, fmt.Errorf("elicitation schema = %#v, want object schema", request.Params.RequestedSchema)
+				}
+				if properties, present := schema["properties"]; present {
+					return nil, fmt.Errorf("elicitation properties = %#v, want no requested fields", properties)
+				}
+				if schema["type"] != "object" || schema["additionalProperties"] != false {
+					return nil, fmt.Errorf("elicitation schema = %#v, want closed empty object", schema)
 				}
 				return &mcp.ElicitResult{Action: "accept", Content: map[string]any{}}, nil
 			}},

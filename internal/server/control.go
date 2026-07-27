@@ -98,12 +98,6 @@ func (controls Controls) confirmStop(ctx context.Context, arguments json.RawMess
 		"Stop the active print "+quotedFilename+"?",
 		map[string]any{
 			"type": "object", "additionalProperties": false,
-			"properties": map[string]any{
-				"confirmation": map[string]any{
-					"type":        "boolean",
-					"description": "Approve stopping " + quotedFilename + ".",
-				},
-			},
 		},
 	)
 	if err != nil {
