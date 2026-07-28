@@ -7,7 +7,7 @@
 let
   cfg = configuration.fleet.node.services.carbonctl;
   service = configuration.systemd.services.carbonctl;
-  serviceConfig = service.serviceConfig;
+  inherit (service) serviceConfig;
   gateway = configuration.systemd.services.hermes-carbonctl-gateway;
   profileConfig = import ../../nix/modules/nixos/services/hermes-agent/profiles/carbon/config.nix {
     workspace = "/var/lib/hermes/.hermes/profiles/carbon/workspace";
