@@ -49,7 +49,9 @@ assert
     "AF_INET"
     "AF_INET6"
   ];
-assert configuration.age.secrets.carbonctl-telegram-bot-token.owner == "hermes";
+assert
+  configuration.age.secrets.carbonctl-telegram-bot-token.owner
+  == configuration.fleet.node.meta.primaryUser;
 assert configuration.age.secrets.carbonctl-telegram-bot-token.group == "carbonctl";
 assert configuration.age.secrets.carbonctl-telegram-chat-id.mode == "0440";
 assert gateway.requires == [ "carbonctl.service" ];
