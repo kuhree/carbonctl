@@ -54,7 +54,11 @@ assert
   == configuration.fleet.node.meta.primaryUser;
 assert configuration.age.secrets.carbonctl-telegram-bot-token.group == "carbonctl";
 assert configuration.age.secrets.carbonctl-telegram-chat-id.mode == "0440";
-assert gateway.requires == [ "carbonctl.service" ];
+assert
+  gateway.requires == [
+    "carbonctl.service"
+    "hermes-carbon-env.service"
+  ];
 assert
   gateway.serviceConfig.EnvironmentFile == [
     "/var/lib/hermes/.hermes/.env"
