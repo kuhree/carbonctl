@@ -76,6 +76,8 @@ func TestProcessSendsLifecyclePhotosWithoutDuplicates(t *testing.T) {
 	if err := os.WriteFile(chatPath, []byte("42\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("CARBONCTL_TELEGRAM_TOKEN_FILE", tokenPath)
+	t.Setenv("CARBONCTL_TELEGRAM_CHAT_FILE", chatPath)
 	address := freeAddress(t)
 	snapshotDirectory := filepath.Join(t.TempDir(), "snapshots")
 	process := startProcessWithArgs(t, address,
@@ -84,8 +86,6 @@ func TestProcessSendsLifecyclePhotosWithoutDuplicates(t *testing.T) {
 		"-camera-url", camera.URL,
 		"-snapshot-dir", snapshotDirectory,
 		"-telegram-api-url", telegram.URL,
-		"-telegram-token-file", tokenPath,
-		"-telegram-chat-file", chatPath,
 	)
 	waitForHTTP(t, "http://"+address+"/health", process)
 
