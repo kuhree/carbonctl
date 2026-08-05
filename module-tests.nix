@@ -8,7 +8,6 @@ let
   cfg = configuration.fleet.node.services.carbonctl;
   service = configuration.systemd.services.carbonctl;
   inherit (service) serviceConfig;
-  environmentProjection = configuration.systemd.services.hermes-agent-env;
   # The shared hermes-agent persona (nicknamed "neo") is one flat module, not
   # per-profile directories, so read its real wiring straight off the
   # evaluated oracle configuration instead of importing a standalone config.
@@ -38,9 +37,11 @@ assert !lib.hasInfix "telegram-token-file" serviceConfig.ExecStart;
 assert !lib.hasInfix "telegram-chat-file" serviceConfig.ExecStart;
 assert !lib.hasInfix "TELEGRAM_BOT_TOKEN=" serviceConfig.ExecStart;
 assert
-  service.environment.CARBONCTL_TELEGRAM_TOKEN_FILE == "/run/hermes-agent-env/carbon-telegram-token";
+  service.environment.CARBONCTL_TELEGRAM_TOKEN_FILE
+  == configuration.age.secrets.carbonctl-telegram-bot-token.path;
 assert
-  service.environment.CARBONCTL_TELEGRAM_CHAT_FILE == "/run/hermes-agent-env/carbon-telegram-chat";
+  service.environment.CARBONCTL_TELEGRAM_CHAT_FILE
+  == configuration.age.secrets.carbonctl-telegram-chat-id.path;
 assert serviceConfig.NoNewPrivileges;
 assert serviceConfig.PrivateDevices;
 assert serviceConfig.ProtectSystem == "strict";
@@ -50,12 +51,19 @@ assert
     "AF_INET"
     "AF_INET6"
   ];
-assert !(configuration.age.secrets ? carbonctl-telegram-bot-token);
-assert !(configuration.age.secrets ? carbonctl-telegram-chat-id);
+assert configuration.age.secrets ? carbonctl-telegram-bot-token;
+assert configuration.age.secrets ? carbonctl-telegram-chat-id;
+assert lib.hasInfix "carbonctl-telegram-bot-token" (
+  toString configuration.age.secrets.carbonctl-telegram-bot-token.file
+);
+assert lib.hasInfix "carbonctl-telegram-chat-id" (
+  toString configuration.age.secrets.carbonctl-telegram-chat-id.file
+);
+assert !(lib.hasInfix "jerry-telegram" (toString configuration.age.secrets.carbonctl-telegram-bot-token.file));
 assert configuration.age.secrets ? hermes-agent-env;
-assert lib.elem "carbonctl.service" environmentProjection.before;
-assert lib.elem "carbonctl.service" environmentProjection.requiredBy;
-assert environmentProjection.serviceConfig.EnvironmentFile == "/run/agenix/hermes-agent-env";
+assert !(hermes.settings.mcp_servers ? jerry);
+assert hermes.environmentFiles == [ configuration.age.secrets.hermes-agent-env.path ];
+assert !(configuration.systemd.services ? hermes-agent-env);
 assert !lib.any (rule: lib.hasInfix "/profiles/carbon/" rule) configuration.systemd.tmpfiles.rules;
 assert !(configuration.systemd.services ? hermes-carbonctl-gateway);
 assert !(configuration.services.nginx.virtualHosts ? "carbonctl.kuhree.com");

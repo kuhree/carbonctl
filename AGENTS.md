@@ -3,8 +3,8 @@
 carbonctl is a loopback-only Go bridge between an OpenCentauri (Elegoo
 Centauri Carbon) 3D printer's SDCP websocket/camera/history endpoints and MCP
 tool clients. It is the mechanism behind "talk to my printer." The shared,
-always-on hermes-agent persona (nicknamed "neo"; its Telegram bot is "Jerry",
-@oh_hermes_mechanic_bot) provides the conversation layer, and carbonctl is one
+always-on hermes-agent persona (nicknamed "neo") provides the conversation
+layer, and carbonctl is one
 of its toolsets (see `nix/modules/nixos/services/hermes-agent/default.nix`'s
 `toolsets` list and `mcp-servers.nix`'s `carbonctl` block). carbonctl uses its
 own dedicated Telegram bot for outbound printer alerts, not the shared
@@ -24,8 +24,8 @@ deployment modules below are canonical. Prefer reading those over asking.
   secrets. It is also the source of truth for default ports/paths — don't
   hardcode them elsewhere.
 - `nix/modules/nixos/services/hermes-agent/` is the conversational layer on
-  top of this service. `settings.nix` and `environment.nix` own the shared
-  Hermes persona, and `mcp-servers.nix` owns the MCP tool allowlist.
+  top of this service. `settings.nix` owns the shared Hermes persona, and
+  carbonctl's MCP allowlist lives in that same settings module.
 - `module-tests.nix` is the NixOS integration test and doubles as a worked
   example of the full config surface.
 
