@@ -9,13 +9,12 @@ let
   service = configuration.systemd.services.carbonctl;
   inherit (service) serviceConfig;
   environmentProjection = configuration.systemd.services.hermes-agent-env;
-  profileConfig = import ../../nix/modules/nixos/services/hermes-agent/profiles/jerry/config.nix {
-    workspace = "/var/lib/hermes/.hermes/profiles/jerry/workspace";
-    jerryMcpUrl = "https://jerry.kuhree.com/mcp";
-    carbonMcpUrl = "http://127.0.0.1:9086/mcp";
-  };
-  soul = builtins.readFile ../../nix/modules/nixos/services/hermes-agent/profiles/jerry/SOUL.md;
-  toolAllowlist = profileConfig.mcp_servers.carbonctl.tools.include;
+  # The shared hermes-agent persona (nicknamed "neo") is one flat module, not
+  # per-profile directories, so read its real wiring straight off the
+  # evaluated oracle configuration instead of importing a standalone config.
+  hermes = configuration.services.hermes-agent;
+  soul = builtins.readFile ../../nix/modules/nixos/services/hermes-agent/SOUL.md;
+  toolAllowlist = hermes.settings.mcp_servers.carbonctl.tools.include;
   expectedTools = [
     "carbonctl_get_status"
     "carbonctl_get_snapshot"
@@ -57,17 +56,14 @@ assert configuration.age.secrets ? hermes-agent-env;
 assert lib.elem "carbonctl.service" environmentProjection.before;
 assert lib.elem "carbonctl.service" environmentProjection.requiredBy;
 assert environmentProjection.serviceConfig.EnvironmentFile == "/run/agenix/hermes-agent-env";
-assert lib.any (
-  rule: lib.hasInfix "/profiles/jerry/config.yaml" rule
-) configuration.systemd.tmpfiles.rules;
 assert !lib.any (rule: lib.hasInfix "/profiles/carbon/" rule) configuration.systemd.tmpfiles.rules;
 assert !(configuration.systemd.services ? hermes-carbonctl-gateway);
 assert !(configuration.services.nginx.virtualHosts ? "carbonctl.kuhree.com");
 assert !(configuration.fleet.inventory.services ? carbonctl);
 assert toolAllowlist == expectedTools;
-assert profileConfig.mcp_servers.carbonctl.timeout == 330;
-assert profileConfig.mcp_servers.carbonctl.elicitation.enabled;
-assert profileConfig.mcp_servers.carbonctl.elicitation.timeout == 300;
+assert hermes.settings.mcp_servers.carbonctl.timeout == 330;
+assert hermes.settings.mcp_servers.carbonctl.elicitation.enabled;
+assert hermes.settings.mcp_servers.carbonctl.elicitation.timeout == 300;
 assert lib.hasInfix "For printer work" soul;
 assert lib.hasInfix "Pause and resume require an explicit request" soul;
 assert lib.hasInfix "Stop is always two-phase" soul;
