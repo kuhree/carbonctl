@@ -10,6 +10,16 @@ let
   stateFile = "${cfg.stateDirectory}/state.json";
   snapshotDirectory = "${cfg.stateDirectory}/snapshots";
   printerBaseURL = "http://${cfg.printer.address}";
+  telegramTokenFile =
+    if cfg.telegram.botTokenFile != null then
+      cfg.telegram.botTokenFile
+    else
+      config.age.secrets.carbonctl-telegram-bot-token.path;
+  telegramChatFile =
+    if cfg.telegram.authorizedChatFile != null then
+      cfg.telegram.authorizedChatFile
+    else
+      config.age.secrets.carbonctl-telegram-chat-id.path;
 in
 {
   options.fleet.node.services.carbonctl = {
@@ -50,12 +60,22 @@ in
       botTokenSource = lib.mkOption {
         type = lib.types.nullOr lib.types.path;
         default = null;
-        description = "Ragenix source payload for the dedicated Telegram bot token.";
+        description = "Ragenix source payload for the Telegram bot token.";
       };
       authorizedChatSource = lib.mkOption {
         type = lib.types.nullOr lib.types.path;
         default = null;
-        description = "Ragenix source payload for the sole authorized Telegram chat ID.";
+        description = "Ragenix source payload for the authorized Telegram chat ID.";
+      };
+      botTokenFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Existing runtime file containing the Telegram bot token.";
+      };
+      authorizedChatFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Existing runtime file containing the authorized Telegram chat ID.";
       };
     };
   };
@@ -71,12 +91,13 @@ in
         message = "carbonctl must bind only to an IP loopback address";
       }
       {
-        assertion = cfg.telegram.botTokenSource != null;
-        message = "carbonctl requires a ragenix Telegram bot token source";
+        assertion = (cfg.telegram.botTokenSource != null) != (cfg.telegram.botTokenFile != null);
+        message = "carbonctl requires exactly one Telegram bot token source or file";
       }
       {
-        assertion = cfg.telegram.authorizedChatSource != null;
-        message = "carbonctl requires a ragenix authorized Telegram chat source";
+        assertion =
+          (cfg.telegram.authorizedChatSource != null) != (cfg.telegram.authorizedChatFile != null);
+        message = "carbonctl requires exactly one authorized Telegram chat source or file";
       }
     ];
 
@@ -87,25 +108,29 @@ in
       description = "carbonctl service account";
     };
 
-    age.secrets = {
-      carbonctl-telegram-bot-token = {
-        file = cfg.telegram.botTokenSource;
-        owner = config.services.hermes-agent.user;
-        group = "carbonctl";
-        mode = "0440";
-      };
-      carbonctl-telegram-chat-id = {
-        file = cfg.telegram.authorizedChatSource;
-        owner = config.services.hermes-agent.user;
-        group = "carbonctl";
-        mode = "0440";
-      };
-    };
+    age.secrets = lib.mkMerge [
+      (lib.mkIf (cfg.telegram.botTokenSource != null) {
+        carbonctl-telegram-bot-token = {
+          file = cfg.telegram.botTokenSource;
+          owner = "root";
+          group = "carbonctl";
+          mode = "0440";
+        };
+      })
+      (lib.mkIf (cfg.telegram.authorizedChatSource != null) {
+        carbonctl-telegram-chat-id = {
+          file = cfg.telegram.authorizedChatSource;
+          owner = "root";
+          group = "carbonctl";
+          mode = "0440";
+        };
+      })
+    ];
 
     environment.systemPackages = [ cfg.package ];
 
     systemd.services.carbonctl = {
-      description = "${cfg.displayName} MCP and Telegram bridge";
+      description = "${cfg.displayName} MCP and outbound Telegram notifier";
       wantedBy = [ "multi-user.target" ];
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
@@ -114,8 +139,8 @@ in
         StartLimitBurst = 5;
       };
       environment = {
-        CARBONCTL_TELEGRAM_TOKEN_FILE = config.age.secrets.carbonctl-telegram-bot-token.path;
-        CARBONCTL_TELEGRAM_CHAT_FILE = config.age.secrets.carbonctl-telegram-chat-id.path;
+        CARBONCTL_TELEGRAM_TOKEN_FILE = telegramTokenFile;
+        CARBONCTL_TELEGRAM_CHAT_FILE = telegramChatFile;
       };
       serviceConfig = {
         User = "carbonctl";

@@ -8,12 +8,13 @@ let
   cfg = configuration.fleet.node.services.carbonctl;
   service = configuration.systemd.services.carbonctl;
   inherit (service) serviceConfig;
-  gateway = configuration.systemd.services.hermes-carbonctl-gateway;
-  profileConfig = import ../../nix/modules/nixos/services/hermes-agent/profiles/carbon/config.nix {
-    workspace = "/var/lib/hermes/.hermes/profiles/carbon/workspace";
-    mcpURL = "http://127.0.0.1:9086/mcp";
+  environmentProjection = configuration.systemd.services.hermes-agent-env;
+  profileConfig = import ../../nix/modules/nixos/services/hermes-agent/profiles/jerry/config.nix {
+    workspace = "/var/lib/hermes/.hermes/profiles/jerry/workspace";
+    jerryMcpUrl = "https://jerry.kuhree.com/mcp";
+    carbonMcpUrl = "http://127.0.0.1:9086/mcp";
   };
-  soul = builtins.readFile ../../nix/modules/nixos/services/hermes-agent/profiles/carbon/SOUL.md;
+  soul = builtins.readFile ../../nix/modules/nixos/services/hermes-agent/profiles/jerry/SOUL.md;
   toolAllowlist = profileConfig.mcp_servers.carbonctl.tools.include;
   expectedTools = [
     "carbonctl_get_status"
@@ -38,8 +39,9 @@ assert !lib.hasInfix "telegram-token-file" serviceConfig.ExecStart;
 assert !lib.hasInfix "telegram-chat-file" serviceConfig.ExecStart;
 assert !lib.hasInfix "TELEGRAM_BOT_TOKEN=" serviceConfig.ExecStart;
 assert
-  service.environment.CARBONCTL_TELEGRAM_TOKEN_FILE == "/run/agenix/carbonctl-telegram-bot-token";
-assert service.environment.CARBONCTL_TELEGRAM_CHAT_FILE == "/run/agenix/carbonctl-telegram-chat-id";
+  service.environment.CARBONCTL_TELEGRAM_TOKEN_FILE == "/run/hermes-agent-env/carbon-telegram-token";
+assert
+  service.environment.CARBONCTL_TELEGRAM_CHAT_FILE == "/run/hermes-agent-env/carbon-telegram-chat";
 assert serviceConfig.NoNewPrivileges;
 assert serviceConfig.PrivateDevices;
 assert serviceConfig.ProtectSystem == "strict";
@@ -49,50 +51,30 @@ assert
     "AF_INET"
     "AF_INET6"
   ];
-assert
-  configuration.age.secrets.carbonctl-telegram-bot-token.owner
-  == configuration.fleet.node.meta.primaryUser;
-assert configuration.age.secrets.carbonctl-telegram-bot-token.group == "carbonctl";
-assert configuration.age.secrets.carbonctl-telegram-chat-id.mode == "0440";
-assert
-  gateway.requires == [
-    "carbonctl.service"
-    "hermes-carbon-env.service"
-  ];
-assert
-  gateway.serviceConfig.EnvironmentFile == [
-    "/var/lib/hermes/.hermes/.env"
-    "/run/agenix/carbonctl-telegram-bot-token"
-    "/run/agenix/carbonctl-telegram-chat-id"
-  ];
+assert !(configuration.age.secrets ? carbonctl-telegram-bot-token);
+assert !(configuration.age.secrets ? carbonctl-telegram-chat-id);
+assert configuration.age.secrets ? hermes-agent-env;
+assert lib.elem "carbonctl.service" environmentProjection.before;
+assert lib.elem "carbonctl.service" environmentProjection.requiredBy;
+assert environmentProjection.serviceConfig.EnvironmentFile == "/run/agenix/hermes-agent-env";
 assert lib.any (
-  rule: lib.hasInfix "/profiles/carbon/config.yaml" rule
+  rule: lib.hasInfix "/profiles/jerry/config.yaml" rule
 ) configuration.systemd.tmpfiles.rules;
-assert lib.any (
-  rule: lib.hasInfix "/profiles/carbon/SOUL.md" rule
-) configuration.systemd.tmpfiles.rules;
+assert !lib.any (rule: lib.hasInfix "/profiles/carbon/" rule) configuration.systemd.tmpfiles.rules;
+assert !(configuration.systemd.services ? hermes-carbonctl-gateway);
 assert !(configuration.services.nginx.virtualHosts ? "carbonctl.kuhree.com");
 assert !(configuration.fleet.inventory.services ? carbonctl);
 assert toolAllowlist == expectedTools;
 assert profileConfig.mcp_servers.carbonctl.timeout == 330;
 assert profileConfig.mcp_servers.carbonctl.elicitation.enabled;
 assert profileConfig.mcp_servers.carbonctl.elicitation.timeout == 300;
-assert profileConfig.toolsets == [ "carbonctl" ];
-assert
-  profileConfig.agent.disabled_toolsets == [
-    "browser"
-    "cronjob"
-    "file"
-    "messaging"
-    "terminal"
-    "web"
-  ];
-assert lib.hasInfix "natural-language-first" soul;
-assert lib.hasInfix "`/status`, `/snapshot`, `/history`, and `/help`" soul;
-assert lib.hasInfix "`/pause` and `/resume`" soul;
-assert lib.hasInfix "`/stop` never stops immediately" soul;
+assert lib.hasInfix "For printer work" soul;
+assert lib.hasInfix "Pause and resume require an explicit request" soul;
+assert lib.hasInfix "Stop is always two-phase" soul;
 assert hasAssertion "must bind only to an IP loopback";
 assert hasAssertion "requires printer.address";
+assert hasAssertion "requires exactly one Telegram bot token source or file";
+assert hasAssertion "requires exactly one authorized Telegram chat source or file";
 assert rejectsPublicBind;
 pkgs.runCommand "carbonctl-nixos-evaluation-tests" { } ''
   touch "$out"
