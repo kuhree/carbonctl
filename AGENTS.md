@@ -2,10 +2,13 @@
 
 carbonctl is a loopback-only Go bridge between an OpenCentauri (Elegoo
 Centauri Carbon) 3D printer's SDCP websocket/camera/history endpoints and MCP
-tool clients. It is the mechanism behind "talk to my printer." The Hermes
-`jerry` operator profile provides the conversation layer and the MCP tool
-allowlist. carbonctl uses the same Telegram bot as Jerry for outbound printer
-alerts. It does not receive Telegram updates.
+tool clients. It is the mechanism behind "talk to my printer." The shared,
+always-on hermes-agent persona (nicknamed "neo"; its Telegram bot is "Jerry",
+@oh_hermes_mechanic_bot) provides the conversation layer, and carbonctl is one
+of its toolsets (see `nix/modules/nixos/services/hermes-agent/default.nix`'s
+`toolsets` list and `mcp-servers.nix`'s `carbonctl` block). carbonctl uses its
+own dedicated Telegram bot for outbound printer alerts, not the shared
+persona's bot. It does not receive Telegram updates.
 
 There is no README in this directory; the package doc comments and the Nix
 deployment modules below are canonical. Prefer reading those over asking.
@@ -20,9 +23,9 @@ deployment modules below are canonical. Prefer reading those over asking.
 - `module.nix` is the deployment contract: CLI flags, systemd hardening,
   secrets. It is also the source of truth for default ports/paths — don't
   hardcode them elsewhere.
-- `nix/modules/nixos/services/hermes-agent/profiles/jerry/` is the
-  conversational layer on top of this service. It owns the Hermes persona and
-  MCP tool allowlist.
+- `nix/modules/nixos/services/hermes-agent/` is the conversational layer on
+  top of this service. `settings.nix` and `environment.nix` own the shared
+  Hermes persona, and `mcp-servers.nix` owns the MCP tool allowlist.
 - `module-tests.nix` is the NixOS integration test and doubles as a worked
   example of the full config surface.
 
@@ -39,12 +42,12 @@ deployment modules below are canonical. Prefer reading those over asking.
   status and which milestones have already been notified; write through it
   rather than caching status elsewhere.
 - The HTTP listener must stay loopback-only (`server.ErrNonLoopback`,
-  enforced in `cmd/carbonctl/main.go`). Jerry reaches it through the local MCP
-  transport. Never widen this listener.
+  enforced in `cmd/carbonctl/main.go`). The shared hermes-agent persona
+  reaches it through the local MCP transport. Never widen this listener.
 - `internal/lifecycle.Engine` is the only thing that sends proactive
   Telegram notifications (print start/progress/complete/pause/error/
-  disconnect/recovery). It uses Jerry's bot for outbound delivery only. MCP
-  tool calls in `internal/server` never notify directly.
+  disconnect/recovery). It uses carbonctl's own dedicated bot for outbound
+  delivery only. MCP tool calls in `internal/server` never notify directly.
 
 ## Modules
 
@@ -66,5 +69,5 @@ deployment modules below are canonical. Prefer reading those over asking.
 ## Commands and gates
 
 From `bin/carbonctl/`: `gofmt`, `go test ./...`, `go vet ./...`. Nix changes
-touching the service or Jerry profile should build the `carbonctl` package and
-evaluate the `carbonctl` NixOS test above.
+touching the service or the hermes-agent wiring should build the `carbonctl`
+package and evaluate the `carbonctl` NixOS test above.
