@@ -59,7 +59,10 @@ assert lib.hasInfix "carbonctl-telegram-bot-token" (
 assert lib.hasInfix "carbonctl-telegram-chat-id" (
   toString configuration.age.secrets.carbonctl-telegram-chat-id.file
 );
-assert !(lib.hasInfix "jerry-telegram" (toString configuration.age.secrets.carbonctl-telegram-bot-token.file));
+assert
+  !(lib.hasInfix "jerry-telegram" (
+    toString configuration.age.secrets.carbonctl-telegram-bot-token.file
+  ));
 assert configuration.age.secrets ? hermes-agent-env;
 assert !(hermes.settings.mcp_servers ? jerry);
 assert hermes.environmentFiles == [ configuration.age.secrets.hermes-agent-env.path ];
