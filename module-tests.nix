@@ -1,7 +1,6 @@
 {
   badConfiguration,
   configuration,
-  inventory,
   lib,
   pkgs,
 }:
@@ -71,7 +70,7 @@ assert !(configuration.systemd.services ? hermes-agent-env);
 assert !lib.any (rule: lib.hasInfix "/profiles/carbon/" rule) configuration.systemd.tmpfiles.rules;
 assert !(configuration.systemd.services ? hermes-carbonctl-gateway);
 assert !(configuration.services.nginx.virtualHosts ? "carbonctl.kuhree.com");
-assert !(inventory.services ? carbonctl);
+assert !(configuration.fleet.inventory.services ? carbonctl);
 assert toolAllowlist == expectedTools;
 assert hermes.settings.mcp_servers.carbonctl.timeout == 330;
 assert hermes.settings.mcp_servers.carbonctl.elicitation.enabled;
