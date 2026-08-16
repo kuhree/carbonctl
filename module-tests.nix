@@ -1,10 +1,27 @@
 {
-  badConfiguration,
-  configuration,
+  inputs,
   lib,
   pkgs,
 }:
 let
+  configuration =
+    (inputs.self.nixosConfigurations.oracle.extendModules {
+      modules = [ { fleet.node.services.carbonctl.enable = lib.mkForce true; } ];
+    }).config;
+
+  # The same host with a public bind, to read the assertion back off it.
+  badConfiguration =
+    (inputs.self.nixosConfigurations.oracle.extendModules {
+      modules = [
+        {
+          fleet.node.services.carbonctl = {
+            enable = lib.mkForce true;
+            bind = lib.mkForce "0.0.0.0";
+          };
+        }
+      ];
+    }).config;
+
   cfg = configuration.fleet.node.services.carbonctl;
   service = configuration.systemd.services.carbonctl;
   inherit (service) serviceConfig;
