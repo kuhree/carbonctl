@@ -26,8 +26,9 @@ deployment modules below are canonical. Prefer reading those over asking.
 - `nix/modules/nixos/services/hermes-agent/` is the conversational layer on
   top of this service. `settings.nix` owns the shared Hermes persona, and
   carbonctl's MCP allowlist lives in that same settings module.
-- `module-tests.nix` is the NixOS integration test and doubles as a worked
-  example of the full config surface.
+- `tests.nix` is the NixOS integration test and doubles as a worked
+  example of the full config surface. `nix/lib/checks.nix` collects it by
+  name, so it runs as `checks.carbonctl` without any entry in `flake.nix`.
 
 ## Runtime boundaries
 
