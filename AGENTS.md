@@ -20,14 +20,16 @@ deployment modules below are canonical. Prefer reading those over asking.
   control manager, HTTP server).
 - Each internal package opens with a one-line doc comment stating its
   responsibility (`go doc ./internal/...` or just the top of each file).
-- `module.nix` is the deployment contract: CLI flags, systemd hardening,
-  secrets. It is also the source of truth for default ports/paths — don't
-  hardcode them elsewhere.
+- `nix/modules/nixos/services/carbonctl/default.nix` is the deployment
+  contract: CLI flags, systemd hardening, secrets. It is also the source of
+  truth for default ports/paths — don't hardcode them elsewhere.
 - `nix/modules/nixos/services/hermes-agent/` is the conversational layer on
   top of this service. `settings.nix` owns the shared Hermes persona, and
   carbonctl's MCP allowlist lives in that same settings module.
-- `module-tests.nix` is the NixOS integration test and doubles as a worked
-  example of the full config surface.
+- `nix/modules/nixos/services/carbonctl/tests.nix` is the NixOS integration
+  test and doubles as a worked example of the full config surface.
+  `nix/lib/checks.nix` collects it by name, so it runs as `checks.carbonctl`
+  without any entry in `flake.nix`.
 
 ## Runtime boundaries
 
