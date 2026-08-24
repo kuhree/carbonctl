@@ -245,13 +245,6 @@ func (store *memoryStore) Observe(status printer.Status) error {
 	store.current, store.disconnected = status, time.Time{}
 	return nil
 }
-func (store *memoryStore) Disconnected() error {
-	store.current.Connected = false
-	if store.disconnected.IsZero() {
-		store.disconnected = time.Now().UTC()
-	}
-	return nil
-}
 func (store *memoryStore) DisconnectedAt(at time.Time) error {
 	store.current.Connected, store.disconnected = false, at
 	return nil
