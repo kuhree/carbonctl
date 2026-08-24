@@ -28,27 +28,12 @@ type StatusSource interface {
 }
 
 type options struct {
-	now         func() time.Time
-	freshness   time.Duration
-	tools       []Tool
-	officialMCP bool
+	now       func() time.Time
+	freshness time.Duration
+	tools     []Tool
 }
 
 type Option func(*options)
-
-func WithTelemetryFreshness(freshness time.Duration) Option {
-	return func(configuration *options) {
-		if freshness > 0 {
-			configuration.freshness = freshness
-		}
-	}
-}
-
-func WithOfficialMCP() Option {
-	return func(configuration *options) {
-		configuration.officialMCP = true
-	}
-}
 
 func New(source StatusSource, supplied ...Option) http.Handler {
 	configuration := options{now: time.Now, freshness: DefaultTelemetryFreshness}
@@ -71,76 +56,10 @@ func New(source StatusSource, supplied ...Option) http.Handler {
 	mux.HandleFunc("GET /identity", jsonHandler(map[string]any{
 		"name": "carbonctl-mcp", "version": "1",
 	}))
-	legacyMCP := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		var incoming struct {
-			JSONRPC string          `json:"jsonrpc"`
-			ID      json.RawMessage `json:"id"`
-			Method  string          `json:"method"`
-			Params  struct {
-				Name      string          `json:"name"`
-				Arguments json.RawMessage `json:"arguments"`
-			} `json:"params"`
-		}
-		decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 64<<10))
-		if decoder.Decode(&incoming) != nil || requireEOF(decoder) != nil || incoming.JSONRPC != "2.0" {
-			writeJSON(writer, map[string]any{"jsonrpc": "2.0", "error": map[string]any{
-				"code": -32700, "message": "invalid JSON-RPC request",
-			}})
-			return
-		}
-		response := map[string]any{"jsonrpc": "2.0", "id": incoming.ID}
-		switch incoming.Method {
-		case "initialize":
-			response["result"] = map[string]any{
-				"protocolVersion": "2025-03-26",
-				"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
-				"serverInfo":      map[string]string{"name": "carbonctl", "version": "1"},
-			}
-		case "tools/list":
-			tools := []any{map[string]any{
-				"name":        "carbonctl_get_status",
-				"description": "Observe the current printer state",
-				"inputSchema": map[string]any{"type": "object", "additionalProperties": false},
-			}}
-			for _, tool := range configuration.tools {
-				tools = append(tools, map[string]any{
-					"name": tool.Name, "description": tool.Description, "inputSchema": tool.InputSchema,
-				})
-			}
-			response["result"] = map[string]any{"tools": tools}
-		case "tools/call":
-			if incoming.Params.Name == "carbonctl_get_status" {
-				current := source.Current()
-				response["result"] = map[string]any{
-					"content":           []any{map[string]any{"type": "text", "text": mustJSON(current)}},
-					"structuredContent": current, "isError": false,
-				}
-				break
-			}
-			tool, ok := configuration.tool(incoming.Params.Name)
-			if !ok {
-				response["error"] = map[string]any{"code": -32602, "message": "unknown tool"}
-				break
-			}
-			result, err := tool.Call(request.Context(), incoming.Params.Arguments)
-			if err != nil {
-				response["error"] = map[string]any{"code": -32603, "message": "tool failed"}
-				break
-			}
-			response["result"] = result
-		default:
-			response["error"] = map[string]any{"code": -32601, "message": "method not found"}
-		}
-		writeJSON(writer, response)
-	})
-	if configuration.officialMCP {
-		mcpServer := NewMCPServer(source, configuration.tools...)
-		mux.Handle("/mcp", mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-			return mcpServer
-		}, nil))
-	} else {
-		mux.Handle("POST /mcp", legacyMCP)
-	}
+	mcpServer := NewMCPServer(source, configuration.tools...)
+	mux.Handle("/mcp", mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+		return mcpServer
+	}, nil))
 	return mux
 }
 

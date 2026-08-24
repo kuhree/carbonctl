@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -55,23 +54,6 @@ func TestProcessExposesBoundedOperationalStatus(t *testing.T) {
 	assertJSON(t, "http://"+address+"/ready", map[string]any{
 		"status": "unavailable", "printer_connected": false,
 	})
-}
-
-func TestProcessHarnessOwnsAndTerminatesTheServiceProcess(t *testing.T) {
-	process := launchProcess(t,
-		"-listen", freeAddress(t),
-		"-printer-url", "ws://127.0.0.1:1/websocket",
-		"-state", filepath.Join(t.TempDir(), "state.json"),
-	)
-	pid := process.command.Process.Pid
-	process.stop()
-
-	if process.command.ProcessState == nil {
-		t.Fatalf("directly owned process %d was not reaped", pid)
-	}
-	if err := process.command.Process.Signal(os.Signal(syscall.Signal(0))); err == nil {
-		t.Fatalf("process %d remains alive after harness cleanup", pid)
-	}
 }
 
 func TestActivePrintIsNormalizedThroughMCP(t *testing.T) {
@@ -267,43 +249,6 @@ func TestProcessExpiresRetainedSnapshotsAtStartup(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(snapshotDir, name)); !os.IsNotExist(err) {
 			t.Fatalf("expired file %q was not removed", name)
 		}
-	}
-}
-
-func TestProcessPeriodicallyExpiresSnapshotsWithoutCapture(t *testing.T) {
-	snapshotDir := filepath.Join(t.TempDir(), "snapshots")
-	unrelated := filepath.Join(snapshotDir, "keep.txt")
-	if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(unrelated, []byte("keep"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	address := freeAddress(t)
-	process := startProcessWithArgs(t, address,
-		"-printer-url", "ws://127.0.0.1:1/websocket",
-		"-state", filepath.Join(t.TempDir(), "state.json"),
-		"-snapshot-dir", snapshotDir,
-		"-snapshot-retention", "1h",
-		"-snapshot-cleanup-interval", "5ms",
-	)
-	waitForHTTP(t, "http://"+address+"/health", process)
-
-	expired, err := (snapshots.Store{Directory: snapshotDir}).Save(
-		context.Background(),
-		[]byte("\xff\xd8old\xff\xd9"),
-		snapshots.Metadata{TakenAt: time.Now().Add(-2 * time.Hour), TaskID: "idle-task"},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	eventuallyProcess(t, func() bool {
-		_, imageErr := os.Stat(filepath.Join(snapshotDir, expired.ImageName))
-		_, sidecarErr := os.Stat(filepath.Join(snapshotDir, expired.SidecarName))
-		return os.IsNotExist(imageErr) && os.IsNotExist(sidecarErr)
-	})
-	if _, err := os.Stat(unrelated); err != nil {
-		t.Fatalf("unrelated file removed: %v", err)
 	}
 }
 

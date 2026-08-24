@@ -17,12 +17,3 @@ func WithTools(tools ...Tool) Option {
 		configuration.tools = append(configuration.tools, tools...)
 	}
 }
-
-func (configuration options) tool(name string) (Tool, bool) {
-	for _, tool := range configuration.tools {
-		if tool.Name == name {
-			return tool, true
-		}
-	}
-	return Tool{}, false
-}

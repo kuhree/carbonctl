@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -207,4 +208,50 @@ func connectMCP(
 	}
 	t.Cleanup(func() { _ = clientSession.Close() })
 	return clientSession
+}
+
+type mutableStatus struct {
+	mu     sync.Mutex
+	status printer.Status
+}
+
+func (source *mutableStatus) Current() printer.Status {
+	source.mu.Lock()
+	defer source.mu.Unlock()
+	return source.status
+}
+
+func (source *mutableStatus) set(status printer.Status) {
+	source.mu.Lock()
+	defer source.mu.Unlock()
+	source.status = status
+}
+
+type observingSender struct {
+	mu       sync.Mutex
+	source   *mutableStatus
+	commands []int
+}
+
+func (sender *observingSender) Send(_ context.Context, command int, current printer.Status) error {
+	sender.mu.Lock()
+	sender.commands = append(sender.commands, command)
+	sender.mu.Unlock()
+	switch command {
+	case 129:
+		current.State = "paused"
+	case 131:
+		current.State = "printing"
+	case 130:
+		current.State = "idle"
+		current.TaskID = ""
+	}
+	sender.source.set(current)
+	return nil
+}
+
+func (sender *observingSender) sent() []int {
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	return append([]int(nil), sender.commands...)
 }
