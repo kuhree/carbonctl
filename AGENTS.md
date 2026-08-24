@@ -6,7 +6,7 @@ tool clients. It is the mechanism behind "talk to my printer." The shared,
 always-on hermes-agent persona (nicknamed "neo") provides the conversation
 layer, and carbonctl is one
 of its toolsets (see `nix/modules/nixos/services/hermes-agent/default.nix`'s
-`toolsets` list and `mcp-servers.nix`'s `carbonctl` block). carbonctl uses its
+`toolsets` list and `settings.nix`'s `carbonctl` block). carbonctl uses its
 own dedicated Telegram bot for outbound printer alerts, not the shared
 persona's bot. It does not receive Telegram updates.
 
@@ -65,11 +65,11 @@ deployment modules below are canonical. Prefer reading those over asking.
   exposed as MCP tools via `internal/server/media.go`.
 - `internal/notifications`: Telegram delivery (retry, text vs photo).
 - `internal/server`: the loopback HTTP surface — health/ready/identity plus
-  both a legacy JSON-RPC `/mcp` and the official MCP transport
+  the official MCP transport at `/mcp`
   (`server.go`, `mcp_transport.go`, `tools.go`, `control.go`, `media.go`).
 
 ## Commands and gates
 
-From `bin/carbonctl/`: `gofmt`, `go test ./...`, `go vet ./...`. Nix changes
+From `bin/carbonctl/`: `gofmt -l .`, `go test ./...`, `go vet ./...`. Nix changes
 touching the service or the hermes-agent wiring should build the `carbonctl`
 package and evaluate the `carbonctl` NixOS test above.
