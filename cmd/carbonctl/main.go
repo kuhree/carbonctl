@@ -27,18 +27,15 @@ import (
 )
 
 type config struct {
-	listenAddress      string
-	printerURL         string
-	statePath          string
-	telemetryFreshness time.Duration
-	cameraURL          string
-	historyURL         string
-	snapshotDirectory  string
-	snapshotRetention  time.Duration
-	snapshotCleanup    time.Duration
-	telegramAPIURL     string
-	telegramTokenFile  string
-	telegramChatFile   string
+	listenAddress     string
+	printerURL        string
+	statePath         string
+	cameraURL         string
+	historyURL        string
+	snapshotDirectory string
+	snapshotRetention time.Duration
+	telegramTokenFile string
+	telegramChatFile  string
 }
 
 var errInvalidTelegramChatID = errors.New("invalid Telegram chat ID")
@@ -48,13 +45,10 @@ func main() {
 	flag.StringVar(&configuration.listenAddress, "listen", "127.0.0.1:9086", "loopback HTTP listen address")
 	flag.StringVar(&configuration.printerURL, "printer-url", "", "OpenCentauri WebSocket URL")
 	flag.StringVar(&configuration.statePath, "state", "", "persistent state document path")
-	flag.DurationVar(&configuration.telemetryFreshness, "telemetry-freshness", server.DefaultTelemetryFreshness, "maximum ready telemetry age")
 	flag.StringVar(&configuration.cameraURL, "camera-url", "", "OpenCentauri MJPEG URL")
 	flag.StringVar(&configuration.historyURL, "history-url", "", "printer history URL")
 	flag.StringVar(&configuration.snapshotDirectory, "snapshot-dir", "", "retained snapshot directory")
 	flag.DurationVar(&configuration.snapshotRetention, "snapshot-retention", 72*time.Hour, "retained snapshot lifetime")
-	flag.DurationVar(&configuration.snapshotCleanup, "snapshot-cleanup-interval", 0, "snapshot cleanup cadence (default: hourly, bounded by retention)")
-	flag.StringVar(&configuration.telegramAPIURL, "telegram-api-url", "", "Telegram Bot API base URL")
 	flag.Parse()
 	configuration.telegramTokenFile = os.Getenv("CARBONCTL_TELEGRAM_TOKEN_FILE")
 	configuration.telegramChatFile = os.Getenv("CARBONCTL_TELEGRAM_CHAT_FILE")
@@ -91,7 +85,7 @@ func run(configuration config) error {
 	if err := archive.Cleanup(ctx, configuration.snapshotRetention); err != nil {
 		return err
 	}
-	cleanupInterval := snapshots.CleanupInterval(configuration.snapshotRetention, configuration.snapshotCleanup)
+	cleanupInterval := snapshots.CleanupInterval(configuration.snapshotRetention, 0)
 	go snapshots.RunCleanup(ctx, archive, configuration.snapshotRetention, cleanupInterval, func(err error) {
 		slog.Warn("snapshot retention cleanup failed", "error", err)
 	})
@@ -114,7 +108,7 @@ func run(configuration config) error {
 			Archive: archive, Retention: configuration.snapshotRetention,
 			Timeout: server.SnapshotTimeout,
 		}, notifications.Telegram{
-			BaseURL: configuration.telegramAPIURL, Token: token, ChatID: chatID,
+			Token: token, ChatID: chatID,
 			HTTPClient: client,
 		})
 		observer = lifecycle.Observer{Context: ctx, Engine: engine}
@@ -141,8 +135,6 @@ func run(configuration config) error {
 	controller := control.New(store, printer.Commander{URL: configuration.printerURL})
 	service := &http.Server{
 		Handler: server.New(store,
-			server.WithTelemetryFreshness(configuration.telemetryFreshness),
-			server.WithOfficialMCP(),
 			server.WithTools(media.Tools()...),
 			server.WithTools(server.Controls{Controller: controller}.Tools()...),
 		),

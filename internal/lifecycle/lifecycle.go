@@ -30,7 +30,6 @@ var progressMilestones = []int{20, 40, 60, 80}
 
 type Store interface {
 	Observe(printer.Status) error
-	Disconnected() error
 	DisconnectedAt(time.Time) error
 	Current() printer.Status
 	LastDisconnectedAt() time.Time
@@ -47,15 +46,14 @@ type Sender interface {
 }
 
 type Engine struct {
-	mu              sync.Mutex
-	Store           Store
-	Snapshots       Snapshotter
-	Sender          Sender
-	Now             func() time.Time
-	DisconnectDelay time.Duration
-	initialized     bool
-	previous        printer.Status
-	pending         []event
+	mu          sync.Mutex
+	Store       Store
+	Snapshots   Snapshotter
+	Sender      Sender
+	Now         func() time.Time
+	initialized bool
+	previous    printer.Status
+	pending     []event
 }
 
 type event struct {
@@ -157,11 +155,7 @@ func (engine *Engine) CheckDisconnect(ctx context.Context) error {
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
 	at := engine.Store.LastDisconnectedAt()
-	delay := engine.DisconnectDelay
-	if delay <= 0 {
-		delay = disconnectDelay
-	}
-	if at.IsZero() || engine.now().Sub(at) < delay {
+	if at.IsZero() || engine.now().Sub(at) < disconnectDelay {
 		return nil
 	}
 	key := connectionKey(at)
