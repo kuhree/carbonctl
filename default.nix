@@ -21,6 +21,14 @@ buildGoModule {
 
   subPackages = [ "cmd/carbonctl" ];
 
+  # Nonempty subPackages narrows getGoDirs test to cmd/carbonctl only.
+  # Internal packages still need to run in the package check phase.
+  checkPhase = ''
+    runHook preCheck
+    go test ./...
+    runHook postCheck
+  '';
+
   ldflags = [
     "-s"
     "-w"
