@@ -6,8 +6,9 @@ Loopback-only MCP bridge for OpenCentauri (Elegoo Centauri Carbon). Hermes
 
 Canonical sources: `cmd/carbonctl/main.go`, package doc comments (`go doc
 ./internal/...`), `nix/modules/services/carbonctl/default.nix`, and
-`nix/modules/services/hermes-agent/settings.nix` (MCP allowlist). Verify with
-`go test ./...` from `bin/carbonctl/` and
+`nix/modules/services/hermes-agent/default.nix` (Fleet toolset wiring). Shared
+base MCP settings come from the external `hermes-config` flake input. Verify
+with `go test ./...` from `bin/carbonctl/` and
 `nix build .#checks.x86_64-linux.carbonctl` for Nix changes.
 
 ## Invariants
