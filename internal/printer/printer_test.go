@@ -92,6 +92,47 @@ func TestClientBoundsEachWebSocketDialAttempt(t *testing.T) {
 	}
 }
 
+func TestClientStopsAConnectedReadWhenContextIsCanceled(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	connected := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, err := upgrader.Upgrade(writer, request, nil)
+		if err != nil {
+			return
+		}
+		defer connection.Close()
+		close(connected)
+		<-request.Context().Done()
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- (printer.Client{
+			URL:         "ws" + strings.TrimPrefix(server.URL, "http"),
+			MainboardID: "board-7",
+			Observer:    &disconnectObserver{disconnected: make(chan struct{}, 1)},
+		}).Run(ctx)
+	}()
+
+	select {
+	case <-connected:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("client did not connect")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run() error = %v, want clean cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run() did not stop after context cancellation")
+	}
+}
+
 func TestClientReconnectsAfterAnUnsafePayload(t *testing.T) {
 	upgrader := websocket.Upgrader{}
 	attempts := make(chan struct{}, 2)

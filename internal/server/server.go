@@ -28,15 +28,13 @@ type StatusSource interface {
 }
 
 type options struct {
-	now       func() time.Time
-	freshness time.Duration
-	tools     []Tool
+	tools []Tool
 }
 
 type Option func(*options)
 
 func New(source StatusSource, supplied ...Option) http.Handler {
-	configuration := options{now: time.Now, freshness: DefaultTelemetryFreshness}
+	configuration := options{}
 	for _, option := range supplied {
 		option(&configuration)
 	}
@@ -46,7 +44,7 @@ func New(source StatusSource, supplied ...Option) http.Handler {
 		current := source.Current()
 		connected := current.Connected
 		fresh := !current.ObservedAt.IsZero() &&
-			configuration.now().Sub(current.ObservedAt) <= configuration.freshness
+			time.Since(current.ObservedAt) <= DefaultTelemetryFreshness
 		status := "unavailable"
 		if connected && fresh {
 			status = "ready"

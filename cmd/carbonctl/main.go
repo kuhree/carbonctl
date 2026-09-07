@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -76,7 +77,11 @@ func run(configuration config) error {
 	defer listener.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	var workers sync.WaitGroup
+	defer func() {
+		stop()
+		workers.Wait()
+	}()
 	store, err := state.Open(configuration.statePath)
 	if err != nil {
 		return err
@@ -85,10 +90,14 @@ func run(configuration config) error {
 	if err := archive.Cleanup(ctx, configuration.snapshotRetention); err != nil {
 		return err
 	}
+	workers.Add(1)
 	cleanupInterval := snapshots.CleanupInterval(configuration.snapshotRetention, 0)
-	go snapshots.RunCleanup(ctx, archive, configuration.snapshotRetention, cleanupInterval, func(err error) {
-		slog.Warn("snapshot retention cleanup failed", "error", err)
-	})
+	go func() {
+		defer workers.Done()
+		snapshots.RunCleanup(ctx, archive, configuration.snapshotRetention, cleanupInterval, func(err error) {
+			slog.Warn("snapshot retention cleanup failed", "error", err)
+		})
+	}()
 	client := &http.Client{Timeout: server.SnapshotTimeout}
 	observer := printer.Observer(store)
 	if configuration.telegramTokenFile != "" || configuration.telegramChatFile != "" {
@@ -112,14 +121,18 @@ func run(configuration config) error {
 			HTTPClient: client,
 		})
 		observer = lifecycle.Observer{Context: ctx, Engine: engine}
+		workers.Add(1)
 		go func() {
+			defer workers.Done()
 			if err := engine.Run(ctx); err != nil {
 				slog.Error("printer lifecycle monitoring stopped", "error", err)
 				stop()
 			}
 		}()
 	}
+	workers.Add(1)
 	go func() {
+		defer workers.Done()
 		if err := (printer.Client{URL: configuration.printerURL, Observer: observer}).Run(ctx); err != nil {
 			slog.Error("printer observation stopped", "error", err)
 			stop()
@@ -143,13 +156,22 @@ func run(configuration config) error {
 		WriteTimeout:      server.WriteTimeout,
 		IdleTimeout:       server.IdleTimeout,
 	}
+	shutdownDone := make(chan struct{})
 	go func() {
+		defer close(shutdownDone)
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), server.ShutdownTimeout)
 		defer cancel()
 		_ = service.Shutdown(shutdownCtx)
 	}()
-	return service.Serve(listener)
+	serveErr := service.Serve(listener)
+	stop()
+	<-shutdownDone
+	workers.Wait()
+	if errors.Is(serveErr, http.ErrServerClosed) {
+		return nil
+	}
+	return serveErr
 }
 
 func readTelegramChatID(path string) (string, error) {

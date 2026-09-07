@@ -186,5 +186,13 @@ func (store *Store) persistLocked(saved document) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	return os.Rename(temporaryPath, store.path)
+	if err := os.Rename(temporaryPath, store.path); err != nil {
+		return err
+	}
+	directoryHandle, err := os.Open(filepath.Dir(store.path))
+	if err != nil {
+		return err
+	}
+	defer directoryHandle.Close()
+	return directoryHandle.Sync()
 }

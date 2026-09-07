@@ -127,7 +127,21 @@ func (client Client) read(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer connection.Close()
+	connectionDone := make(chan struct{})
+	cancelWatcherDone := make(chan struct{})
+	go func() {
+		defer close(cancelWatcherDone)
+		select {
+		case <-ctx.Done():
+			_ = connection.Close()
+		case <-connectionDone:
+		}
+	}()
+	defer func() {
+		close(connectionDone)
+		_ = connection.Close()
+		<-cancelWatcherDone
+	}()
 	connection.SetReadLimit(maxMessageBytes)
 	mainboardID := client.MainboardID
 	if mainboardID == "" {
