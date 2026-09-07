@@ -400,15 +400,3 @@ func assertJSON(t *testing.T, url string, want map[string]any) {
 		t.Fatalf("%s = %#v, want %#v", url, got, want)
 	}
 }
-
-func eventuallyProcess(t *testing.T, condition func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if condition() {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatal("condition was not met")
-}
