@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/notifications"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/notifications"
 )
 
 func TestTelegramDeliversEscapedHTMLPhotoCaption(t *testing.T) {

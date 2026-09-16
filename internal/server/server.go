@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/printer"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/printer"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

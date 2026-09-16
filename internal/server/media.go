@@ -8,8 +8,8 @@ import (
 	"errors"
 	"time"
 
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/history"
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/snapshots"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/history"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/snapshots"
 )
 
 const SnapshotTimeout = 5 * time.Second

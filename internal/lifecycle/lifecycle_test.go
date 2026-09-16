@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/lifecycle"
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/notifications"
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/printer"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/lifecycle"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/notifications"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/printer"
 )
 
 func TestLifecycleNotifiesNewPrintAndProgressOnce(t *testing.T) {

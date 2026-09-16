@@ -1,4 +1,4 @@
-module git.kuhree.com/kuhree.com/fleet/bin/carbonctl
+module git.kuhree.com/kuhree.com/platform/bin/carbonctl
 
 go 1.24.0
 
