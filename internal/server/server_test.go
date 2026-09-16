@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/printer"
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/server"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/printer"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/server"
 )
 
 func TestReadyRequiresFreshTelemetry(t *testing.T) {

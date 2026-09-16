@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/camera"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/camera"
 )
 
 func TestCaptureReadsOneJPEGFrame(t *testing.T) {

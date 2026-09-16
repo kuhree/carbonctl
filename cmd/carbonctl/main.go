@@ -16,15 +16,15 @@ import (
 	"syscall"
 	"time"
 
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/camera"
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/control"
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/history"
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/lifecycle"
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/notifications"
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/printer"
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/server"
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/snapshots"
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/state"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/camera"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/control"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/history"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/lifecycle"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/notifications"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/printer"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/server"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/snapshots"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/state"
 )
 
 type config struct {

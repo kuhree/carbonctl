@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"git.kuhree.com/kuhree.com/fleet/bin/carbonctl/internal/snapshots"
+	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/snapshots"
 )
 
 func TestStoreRetainsJPEGWithMetadata(t *testing.T) {
