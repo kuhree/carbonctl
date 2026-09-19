@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/history"
+	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/history"
 )
 
 func TestClientReturnsFiveRecentTasksByDefault(t *testing.T) {

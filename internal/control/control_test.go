@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/control"
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/printer"
+	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/control"
+	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/printer"
 )
 
 func TestPauseRequiresAnObservedPrintingTask(t *testing.T) {

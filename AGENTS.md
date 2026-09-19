@@ -8,7 +8,7 @@ Canonical sources: `cmd/carbonctl/main.go`, package doc comments (`go doc
 ./internal/...`), `services/carbonctl/module.nix`, and
 `services/hermes-agent/module.nix` (kuhree.com Platform toolset wiring). Shared
 base MCP settings come from the external `hermes-config` flake input. Verify
-with `go test ./...` from `bin/carbonctl/` and
+with `go test ./...` from `tools/carbonctl/` and
 `nix build .#checks.x86_64-linux.carbonctl` for Nix changes.
 
 ## Invariants
@@ -19,10 +19,8 @@ with `go test ./...` from `bin/carbonctl/` and
 - Stop is two-phase: `PrepareStop` mints a task-bound token; `ConfirmStop`
   re-validates it and requires MCP elicitation approval
   (`internal/server/control.go`). Never add a one-shot stop path.
-- `internal/state.Store` is the sole source of truth for printer status and
-  notified milestones. Write through it; do not cache status elsewhere.
+- `internal/state.Store` is the sole source of truth for printer status.
+  Write through it; do not cache status elsewhere.
 - The HTTP listener stays loopback-only (`server.ErrNonLoopback` in
   `cmd/carbonctl/main.go`). Hermes reaches it through local MCP transport.
   Never widen this listener.
-- Only `internal/lifecycle.Engine` sends proactive Telegram notifications, via
-  carbonctl's dedicated bot. MCP tool calls never notify directly.

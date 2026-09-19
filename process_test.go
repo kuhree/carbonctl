@@ -19,7 +19,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/snapshots"
+	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/snapshots"
 )
 
 var processTestBinary string

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/printer"
+	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/printer"
 )
 
 type Store struct {

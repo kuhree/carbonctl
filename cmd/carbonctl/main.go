@@ -4,27 +4,22 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/camera"
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/control"
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/history"
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/lifecycle"
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/notifications"
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/printer"
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/server"
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/snapshots"
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/state"
+	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/camera"
+	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/control"
+	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/history"
+	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/printer"
+	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/server"
+	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/snapshots"
+	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/state"
 )
 
 type config struct {
@@ -35,11 +30,7 @@ type config struct {
 	historyURL        string
 	snapshotDirectory string
 	snapshotRetention time.Duration
-	telegramTokenFile string
-	telegramChatFile  string
 }
-
-var errInvalidTelegramChatID = errors.New("invalid Telegram chat ID")
 
 func main() {
 	var configuration config
@@ -51,8 +42,6 @@ func main() {
 	flag.StringVar(&configuration.snapshotDirectory, "snapshot-dir", "", "retained snapshot directory")
 	flag.DurationVar(&configuration.snapshotRetention, "snapshot-retention", 72*time.Hour, "retained snapshot lifetime")
 	flag.Parse()
-	configuration.telegramTokenFile = os.Getenv("CARBONCTL_TELEGRAM_TOKEN_FILE")
-	configuration.telegramChatFile = os.Getenv("CARBONCTL_TELEGRAM_CHAT_FILE")
 
 	if err := run(configuration); err != nil {
 		slog.Error("carbonctl stopped", "error", err)
@@ -99,41 +88,10 @@ func run(configuration config) error {
 		})
 	}()
 	client := &http.Client{Timeout: server.SnapshotTimeout}
-	observer := printer.Observer(store)
-	if configuration.telegramTokenFile != "" || configuration.telegramChatFile != "" {
-		if configuration.telegramTokenFile == "" || configuration.telegramChatFile == "" {
-			return errors.New("both Telegram credential files are required")
-		}
-		token, err := readCredential(configuration.telegramTokenFile, "TELEGRAM_BOT_TOKEN")
-		if err != nil {
-			return errors.New("read Telegram token")
-		}
-		chatID, err := readTelegramChatID(configuration.telegramChatFile)
-		if err != nil {
-			return errors.New("read Telegram chat identity")
-		}
-		engine := lifecycle.New(store, lifecycle.RetainedSnapshots{
-			Camera:  camera.Client{URL: configuration.cameraURL, HTTPClient: client},
-			Archive: archive, Retention: configuration.snapshotRetention,
-			Timeout: server.SnapshotTimeout,
-		}, notifications.Telegram{
-			Token: token, ChatID: chatID,
-			HTTPClient: client,
-		})
-		observer = lifecycle.Observer{Context: ctx, Engine: engine}
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			if err := engine.Run(ctx); err != nil {
-				slog.Error("printer lifecycle monitoring stopped", "error", err)
-				stop()
-			}
-		}()
-	}
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		if err := (printer.Client{URL: configuration.printerURL, Observer: observer}).Run(ctx); err != nil {
+		if err := (printer.Client{URL: configuration.printerURL, Observer: printer.Observer(store)}).Run(ctx); err != nil {
 			slog.Error("printer observation stopped", "error", err)
 			stop()
 		}
@@ -172,45 +130,4 @@ func run(configuration config) error {
 		return nil
 	}
 	return serveErr
-}
-
-func readTelegramChatID(path string) (string, error) {
-	value, err := readCredential(path, "TELEGRAM_ALLOWED_USERS")
-	if err != nil || value[0] == '0' {
-		return "", errInvalidTelegramChatID
-	}
-	for _, character := range value {
-		if character < '0' || character > '9' {
-			return "", errInvalidTelegramChatID
-		}
-	}
-	if _, err := strconv.ParseUint(value, 10, 63); err != nil {
-		return "", errInvalidTelegramChatID
-	}
-	return value, nil
-}
-
-// readCredential reads a credential file, tolerating an optional "KEY="
-// prefix so the same file can double as a systemd EnvironmentFile= entry.
-func readCredential(path, key string) (string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	payload, err := io.ReadAll(io.LimitReader(file, 1025))
-	if err != nil || len(payload) > 1024 {
-		return "", errors.New("credential is unreadable or too large")
-	}
-	value := string(payload)
-	for len(value) > 0 && (value[len(value)-1] == '\n' || value[len(value)-1] == '\r') {
-		value = value[:len(value)-1]
-	}
-	if rest, ok := strings.CutPrefix(value, key+"="); ok {
-		value = rest
-	}
-	if value == "" {
-		return "", errors.New("credential is empty")
-	}
-	return value, nil
 }

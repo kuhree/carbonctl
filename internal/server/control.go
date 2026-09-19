@@ -7,7 +7,7 @@ import (
 	"errors"
 	"strconv"
 
-	"git.kuhree.com/kuhree.com/platform/bin/carbonctl/internal/control"
+	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/control"
 )
 
 type PrintController interface {
