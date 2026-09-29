@@ -1,15 +1,15 @@
-# carbonctl agent guide
+# carbonctl
 
 Loopback-only MCP bridge for OpenCentauri (Elegoo Centauri Carbon). Hermes
 ("neo") is the conversation layer; see
 [OpenCentauri CC1 capabilities](https://git.kuhree.com/kuhree.com/platform/wiki/OpenCentauri-CC1-Capabilities).
 
 Canonical sources: `cmd/carbonctl/main.go`, package doc comments (`go doc
-./internal/...`), `services/carbonctl/module.nix`, and
-`services/hermes-agent/module.nix` (kuhree.com Platform toolset wiring). Shared
+./internal/...`), `services/carbonctl/default.nix`, and
+`services/hermes-agent/default.nix` (kuhree.com Platform toolset wiring). Shared
 base MCP settings come from the external `hermes-config` flake input. Verify
-with `go test ./...` from `tools/carbonctl/` and
-`nix build .#checks.x86_64-linux.carbonctl` for Nix changes.
+with `go test ./...` from `packages/carbonctl/` and
+`nix build .#checks.x86_64-linux.packages-carbonctl` for Nix changes.
 
 ## Invariants
 
