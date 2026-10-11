@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/control"
-	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/printer"
-	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/server"
+	"git.kuhree.com/kuhree.com/carbonctl/internal/control"
+	"git.kuhree.com/kuhree.com/carbonctl/internal/printer"
+	"git.kuhree.com/kuhree.com/carbonctl/internal/server"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

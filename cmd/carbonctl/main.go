@@ -13,13 +13,13 @@ import (
 	"syscall"
 	"time"
 
-	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/camera"
-	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/control"
-	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/history"
-	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/printer"
-	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/server"
-	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/snapshots"
-	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/state"
+	"git.kuhree.com/kuhree.com/carbonctl/internal/camera"
+	"git.kuhree.com/kuhree.com/carbonctl/internal/control"
+	"git.kuhree.com/kuhree.com/carbonctl/internal/history"
+	"git.kuhree.com/kuhree.com/carbonctl/internal/printer"
+	"git.kuhree.com/kuhree.com/carbonctl/internal/server"
+	"git.kuhree.com/kuhree.com/carbonctl/internal/snapshots"
+	"git.kuhree.com/kuhree.com/carbonctl/internal/state"
 )
 
 type config struct {

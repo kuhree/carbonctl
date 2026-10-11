@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/printer"
-	"git.kuhree.com/kuhree.com/platform/tools/carbonctl/internal/state"
+	"git.kuhree.com/kuhree.com/carbonctl/internal/printer"
+	"git.kuhree.com/kuhree.com/carbonctl/internal/state"
 )
 
 func TestStateSurvivesRestartWithNotificationBookkeeping(t *testing.T) {

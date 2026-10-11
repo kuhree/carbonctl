@@ -1,15 +1,32 @@
 # carbonctl
 
-Loopback-only MCP bridge for OpenCentauri (Elegoo Centauri Carbon). Hermes
-("neo") is the conversation layer; see
-[OpenCentauri CC1 capabilities](https://git.kuhree.com/kuhree.com/platform/wiki/OpenCentauri-CC1-Capabilities).
+An MCP server for an Elegoo Centauri Carbon running
+[OpenCentauri](https://github.com/OpenCentauri): print status, the camera,
+print history, and pause, resume, and stop, for any MCP client on the same
+machine.
 
-Canonical sources: `cmd/carbonctl/main.go`, package doc comments (`go doc
-./internal/...`), `services/carbonctl/default.nix`, and
-`services/hermes-agent/default.nix` (kuhree.com Platform toolset wiring). Shared
-base MCP settings come from the external `hermes-config` flake input. Verify
-with `go test ./...` from `packages/carbonctl/` and
-`nix build .#checks.x86_64-linux.packages-carbonctl` for Nix changes.
+```sh
+nix run git+https://git.kuhree.com/kuhree.com/carbonctl -- \
+  --printer-url ws://printer:3030/websocket \
+  --camera-url http://printer:3031/video \
+  --history-url http://printer/api/v1/print-tasks \
+  --state ./state.json --snapshot-dir ./snapshots
+```
+
+On NixOS, `nixosModules.default` runs it as a sandboxed service that reaches
+only the printer and its local clients:
+
+```nix
+services.carbonctl = {
+  enable = true;
+  printer = "192.168.1.50";
+};
+```
+
+## Develop
+
+`nix develop`, then `go test ./...`. `nix flake check` builds the package
+(which runs the tests) and the module's VM test.
 
 ## Invariants
 
@@ -22,5 +39,4 @@ with `go test ./...` from `packages/carbonctl/` and
 - `internal/state.Store` is the sole source of truth for printer status.
   Write through it; do not cache status elsewhere.
 - The HTTP listener stays loopback-only (`server.ErrNonLoopback` in
-  `cmd/carbonctl/main.go`). Hermes reaches it through local MCP transport.
-  Never widen this listener.
+  `cmd/carbonctl/main.go`). Never widen it.
