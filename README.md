@@ -27,7 +27,7 @@ flowchart LR
 
 An assistant that can control real hardware needs hard limits:
 
-- **Allowlist, not denylist.** Only pause, resume and stop (SDCP 129/130/131) can
+- **Allowlist, not denylist.** Only pause, stop and resume (SDCP 129/130/131) can
   reach the printer. Every other command is rejected in one place.
 - **No one-shot stop.** Stopping needs a token tied to the current print, then a
   human approval through MCP elicitation. A stale token or a different print fails.
