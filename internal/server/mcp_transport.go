@@ -9,11 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type elicitationFunc func(context.Context, string, map[string]any) (string, error)
-type elicitationContextKey struct{}
-
-// NewMCPServer adapts carbonctl tools to the official stateful MCP transport.
-// A stateful session is required for server-to-client elicitation.
+// NewMCPServer adapts carbonctl tools to the official MCP transport.
 func NewMCPServer(source StatusSource, tools ...Tool) *mcp.Server {
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{Name: "carbonctl", Version: "1"},
@@ -32,17 +28,6 @@ func NewMCPServer(source StatusSource, tools ...Tool) *mcp.Server {
 			Name: registered.Name, Description: registered.Description,
 			InputSchema: registered.InputSchema,
 		}, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			ctx = context.WithValue(ctx, elicitationContextKey{}, elicitationFunc(
-				func(ctx context.Context, message string, schema map[string]any) (string, error) {
-					result, err := request.Session.Elicit(ctx, &mcp.ElicitParams{
-						Mode: "form", Message: message, RequestedSchema: schema,
-					})
-					if err != nil {
-						return "", err
-					}
-					return result.Action, nil
-				},
-			))
 			value, err := registered.Call(ctx, request.Params.Arguments)
 			if err != nil {
 				return nil, err
@@ -51,18 +36,6 @@ func NewMCPServer(source StatusSource, tools ...Tool) *mcp.Server {
 		})
 	}
 	return mcpServer
-}
-
-func requestElicitation(
-	ctx context.Context,
-	message string,
-	schema map[string]any,
-) (string, error) {
-	elicit, ok := ctx.Value(elicitationContextKey{}).(elicitationFunc)
-	if !ok {
-		return "", errors.New("MCP client elicitation is required")
-	}
-	return elicit(ctx, message, schema)
 }
 
 func convertToolResult(value any) (*mcp.CallToolResult, error) {

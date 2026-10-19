@@ -68,11 +68,7 @@ func processTool(t *testing.T, address, name, arguments string) map[string]any {
 	if err := json.Unmarshal([]byte(arguments), &input); err != nil {
 		t.Fatal(err)
 	}
-	session := connectHTTPMCP(t, "http://"+address+"/mcp", &mcp.ClientOptions{
-		ElicitationHandler: func(context.Context, *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
-			return &mcp.ElicitResult{Action: "accept", Content: map[string]any{}}, nil
-		},
-	})
+	session := connectHTTPMCP(t, "http://"+address+"/mcp", nil)
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
 		Name: name, Arguments: input,
 	})

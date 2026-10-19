@@ -29,8 +29,10 @@ An assistant that can control real hardware needs hard limits:
 
 - **Allowlist, not denylist.** Only pause, stop and resume (SDCP 129/130/131) can
   reach the printer. Every other command is rejected in one place.
-- **No one-shot stop.** Stopping needs a token tied to the current print, then a
-  human approval through MCP elicitation. A stale token or a different print fails.
+- **No one-shot stop.** Stopping needs a token tied to the current print.
+  Human approval is the MCP client's job (it prompts before pause, resume,
+  prepare_stop and confirm_stop); the server enforces the task-bound token, so a
+  stale token or a different print fails.
 - **Loopback only.** The server refuses to listen anywhere but localhost.
 - **One source of truth** for printer state, so the assistant never acts on a stale view.
 
@@ -64,8 +66,9 @@ runs the tests) and a NixOS VM test of the module.
 - Only `internal/control.Manager` may change the printer, and only through
   `printer.Commander.Send`, which allowlists SDCP commands 129/130/131.
 - Stop is two-phase: `PrepareStop` mints a task-bound token; `ConfirmStop`
-  re-checks it and requires MCP elicitation approval (`internal/server/control.go`).
-  Never add a one-shot stop path.
+  re-checks it against the current task and fails if it is stale or the task
+  differs. The server does not ask for approval itself; that is the MCP client's
+  job. Never add a one-shot stop path.
 - `internal/state.Store` is the only source of truth for printer status. Write
   through it; don't cache status elsewhere.
 - The HTTP listener stays loopback-only (`server.ErrNonLoopback` in
