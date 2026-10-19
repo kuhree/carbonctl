@@ -172,20 +172,7 @@ func TestHistoryAssociatesRetainedSnapshotAfterRestart(t *testing.T) {
 		_, _ = io.WriteString(writer, "--frame\r\nContent-Type: image/jpeg\r\n\r\n"+jpeg+"\r\n--frame--\r\n")
 	}))
 	defer camera.Close()
-	printerURL := fakePrinter(t, `{
-		"Status":{"CurrentStatus":[1],"PrintInfo":{
-			"TaskId":"task-42","Filename":"cube.gcode","Progress":20
-		}}
-	}`)
-	historyServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Query().Get("limit") != "5" {
-			t.Errorf("history limit = %q, want 5", request.URL.Query().Get("limit"))
-		}
-		_, _ = io.WriteString(writer, `{"tasks":[
-			{"task_id":"task-42","filename":"cube.gcode","result":"completed","completed_at":"2026-07-26T18:00:00Z"}
-		]}`)
-	}))
-	defer historyServer.Close()
+	printerURL := fakeHistoryPrinter(t)
 	snapshotDir := filepath.Join(t.TempDir(), "snapshots")
 
 	firstAddress := freeAddress(t)
@@ -207,12 +194,12 @@ func TestHistoryAssociatesRetainedSnapshotAfterRestart(t *testing.T) {
 
 	secondAddress := freeAddress(t)
 	second := startProcessWithArgs(t, secondAddress,
-		"-printer-url", "ws://127.0.0.1:1/websocket",
+		"-printer-url", printerURL,
 		"-state", filepath.Join(t.TempDir(), "state.json"),
-		"-history-url", historyServer.URL,
 		"-snapshot-dir", snapshotDir,
 	)
 	waitForHTTP(t, "http://"+secondAddress+"/health", second)
+	waitForConnected(t, secondAddress)
 	result := callTool(t, "http://"+secondAddress+"/mcp", "carbonctl_get_history")
 	structured := result["structuredContent"].(map[string]any)
 	if structured["availability"] != "available" || structured["source"] != "historical" {
@@ -220,9 +207,68 @@ func TestHistoryAssociatesRetainedSnapshotAfterRestart(t *testing.T) {
 	}
 	tasks := structured["tasks"].([]any)
 	task := tasks[0].(map[string]any)
-	if len(task["snapshots"].([]any)) != 1 {
+	if task["task_id"] != "task-42" || task["filename"] != "cube.gcode" ||
+		task["result"] != "completed" || len(task["snapshots"].([]any)) != 1 {
 		t.Fatalf("history task = %#v", task)
 	}
+}
+
+// fakeHistoryPrinter streams one active-task status and answers SDCP history
+// queries (320/321). It records any other command as a test failure.
+func fakeHistoryPrinter(t *testing.T) string {
+	t.Helper()
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, err := upgrader.Upgrade(writer, request, nil)
+		if err != nil {
+			return
+		}
+		defer connection.Close()
+		_ = connection.WriteMessage(websocket.TextMessage, []byte(`{
+			"MainboardID":"board-7",
+			"Status":{"CurrentStatus":[1],"PrintInfo":{
+				"TaskId":"task-42","Filename":"cube.gcode","Progress":20
+			}}
+		}`))
+		for {
+			_, payload, err := connection.ReadMessage()
+			if err != nil {
+				return
+			}
+			var incoming struct {
+				Data struct {
+					Cmd       int    `json:"Cmd"`
+					RequestID string `json:"RequestID"`
+				} `json:"Data"`
+			}
+			if json.Unmarshal(payload, &incoming) != nil {
+				continue
+			}
+			var reply map[string]any
+			switch incoming.Data.Cmd {
+			case 320:
+				reply = map[string]any{"Ack": 0, "HistoryData": []string{"task-42"}}
+			case 321:
+				reply = map[string]any{"Ack": 0, "HistoryDetailList": []map[string]any{{
+					"TaskId": "task-42", "TaskName": "/local/cube.gcode",
+					"BeginTime": 1000, "EndTime": 2000, "TaskStatus": 1,
+					"SliceInformation": map[string]any{"total_layer_numbers": 10},
+				}}}
+			default:
+				t.Errorf("unexpected printer command %d", incoming.Data.Cmd)
+				continue
+			}
+			_ = connection.WriteJSON(map[string]any{
+				"Topic": "sdcp/response/board-7",
+				"Data": map[string]any{
+					"Cmd": incoming.Data.Cmd, "RequestID": incoming.Data.RequestID,
+					"MainboardID": "board-7", "Data": reply,
+				},
+			})
+		}
+	}))
+	t.Cleanup(server.Close)
+	return "ws" + strings.TrimPrefix(server.URL, "http")
 }
 
 func TestProcessExpiresRetainedSnapshotsAtStartup(t *testing.T) {

@@ -55,8 +55,6 @@ in
           "ws://${cfg.printer}:3030/websocket"
           "--camera-url"
           "${url}:3031/video"
-          "--history-url"
-          "${url}/api/v1/print-tasks"
           "--state"
           "${state}/state.json"
           "--snapshot-dir"

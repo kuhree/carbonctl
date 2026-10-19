@@ -8,9 +8,8 @@ stop a print, without being able to do anything else to the printer.
 ```mermaid
 flowchart LR
   A[MCP client<br/>Claude, agents] -->|loopback HTTP| C[carbonctl]
-  C -->|WebSocket, SDCP| P[Printer]
+  C -->|WebSocket, SDCP: status, control, history| P[Printer]
   C -->|MJPEG| K[Camera]
-  C -->|HTTP| H[Print history]
 ```
 
 ## Tools
@@ -28,7 +27,8 @@ flowchart LR
 An assistant that can control real hardware needs hard limits:
 
 - **Allowlist, not denylist.** Only pause, stop and resume (SDCP 129/130/131) can
-  reach the printer. Every other command is rejected in one place.
+  change the printer. Every other command is rejected in one place. History is
+  read over a separate read-only allowlist (SDCP 320/321).
 - **No one-shot stop.** Stopping needs a token tied to the current print.
   Human approval is the MCP client's job (it prompts before pause, resume,
   prepare_stop and confirm_stop); the server enforces the task-bound token, so a
@@ -42,7 +42,6 @@ An assistant that can control real hardware needs hard limits:
 nix run github:kuhree/carbonctl -- \
   --printer-url ws://printer:3030/websocket \
   --camera-url http://printer:3031/video \
-  --history-url http://printer/api/v1/print-tasks \
   --state ./state.json --snapshot-dir ./snapshots
 ```
 
@@ -65,6 +64,8 @@ runs the tests) and a NixOS VM test of the module.
 
 - Only `internal/control.Manager` may change the printer, and only through
   `printer.Commander.Send`, which allowlists SDCP commands 129/130/131.
+  Read-only queries (320/321, history) go through `printer.Querier`, a separate
+  allowlist; never add a command to both, and never add a mutation to `Querier`.
 - Stop is two-phase: `PrepareStop` mints a task-bound token; `ConfirmStop`
   re-checks it against the current task and fails if it is stale or the task
   differs. The server does not ask for approval itself; that is the MCP client's

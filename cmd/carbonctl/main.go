@@ -27,7 +27,6 @@ type config struct {
 	printerURL        string
 	statePath         string
 	cameraURL         string
-	historyURL        string
 	snapshotDirectory string
 	snapshotRetention time.Duration
 }
@@ -38,7 +37,6 @@ func main() {
 	flag.StringVar(&configuration.printerURL, "printer-url", "", "OpenCentauri WebSocket URL")
 	flag.StringVar(&configuration.statePath, "state", "", "persistent state document path")
 	flag.StringVar(&configuration.cameraURL, "camera-url", "", "OpenCentauri MJPEG URL")
-	flag.StringVar(&configuration.historyURL, "history-url", "", "printer history URL")
 	flag.StringVar(&configuration.snapshotDirectory, "snapshot-dir", "", "retained snapshot directory")
 	flag.DurationVar(&configuration.snapshotRetention, "snapshot-retention", 72*time.Hour, "retained snapshot lifetime")
 	flag.Parse()
@@ -99,7 +97,7 @@ func run(configuration config) error {
 	media := server.Media{
 		Camera:    camera.Client{URL: configuration.cameraURL, HTTPClient: client},
 		Archive:   archive,
-		History:   history.Client{URL: configuration.historyURL, HTTPClient: client},
+		History:   history.Client{Querier: printer.Querier{URL: configuration.printerURL}, Status: store},
 		Status:    store,
 		Retention: configuration.snapshotRetention,
 	}

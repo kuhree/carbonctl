@@ -5,11 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"net/http"
-	"net/url"
+	"path"
 	"strconv"
+	"strings"
 	"time"
+
+	"git.kuhree.com/kuhree.com/carbonctl/internal/printer"
 )
 
 const (
@@ -37,55 +38,131 @@ type Task struct {
 	Snapshots       []Snapshot `json:"snapshots,omitempty"`
 }
 
+// Querier is the printer's read-only SDCP query seam (printer.Querier).
+type Querier interface {
+	Query(ctx context.Context, command int, data map[string]any, mainboardID string) (json.RawMessage, error)
+}
+
+// StatusSource supplies the printer's mainboard identity (state.Store).
+type StatusSource interface {
+	Current() printer.Status
+}
+
+// Client reads print history over SDCP: command 320 lists recent task IDs,
+// command 321 returns their details.
 type Client struct {
-	URL              string
-	HTTPClient       *http.Client
+	Querier          Querier
+	Status           StatusSource
 	MaxResponseBytes int64
 }
 
+const (
+	listCommand   = printer.QueryHistoryList
+	detailCommand = printer.QueryHistoryDetail
+)
+
 func (client Client) Recent(ctx context.Context, limit int) ([]Task, error) {
 	limit = boundedLimit(limit)
-	endpoint, err := url.Parse(client.URL)
-	if err != nil || endpoint.Scheme == "" || endpoint.Host == "" {
+	if client.Querier == nil || client.Status == nil {
 		return nil, ErrHistoryUnavailable
 	}
-	query := endpoint.Query()
-	query.Set("limit", strconv.Itoa(limit))
-	endpoint.RawQuery = query.Encode()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
-	if err != nil {
-		return nil, ErrHistoryUnavailable
-	}
-	httpClient := client.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	response, err := httpClient.Do(request)
-	if err != nil {
-		return nil, ErrHistoryUnavailable
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
+	mainboardID := client.Status.Current().MainboardID
+	if mainboardID == "" {
 		return nil, ErrHistoryUnavailable
 	}
 	maxBytes := client.MaxResponseBytes
 	if maxBytes <= 0 {
 		maxBytes = defaultMaxResponse
 	}
-	payload, err := io.ReadAll(io.LimitReader(response.Body, maxBytes+1))
-	if err != nil || int64(len(payload)) > maxBytes {
+
+	reply, err := client.Querier.Query(ctx, listCommand, map[string]any{}, mainboardID)
+	if err != nil || int64(len(reply)) > maxBytes {
 		return nil, ErrHistoryUnavailable
 	}
-	var document struct {
-		Tasks []Task `json:"tasks"`
+	var list struct {
+		HistoryData []string `json:"HistoryData"`
 	}
-	if json.Unmarshal(payload, &document) != nil {
+	if json.Unmarshal(reply, &list) != nil {
 		return nil, ErrHistoryUnavailable
 	}
-	if len(document.Tasks) > limit {
-		document.Tasks = document.Tasks[:limit]
+	ids := list.HistoryData
+	if len(ids) > limit {
+		ids = ids[:limit]
 	}
-	return document.Tasks, nil
+	if len(ids) == 0 {
+		return []Task{}, nil
+	}
+
+	reply, err = client.Querier.Query(ctx, detailCommand, map[string]any{"Id": ids}, mainboardID)
+	if err != nil || int64(len(reply)) > maxBytes {
+		return nil, ErrHistoryUnavailable
+	}
+	var details struct {
+		HistoryDetailList []detail `json:"HistoryDetailList"`
+	}
+	if json.Unmarshal(reply, &details) != nil {
+		return nil, ErrHistoryUnavailable
+	}
+	byID := make(map[string]detail, len(details.HistoryDetailList))
+	for _, item := range details.HistoryDetailList {
+		byID[item.TaskID] = item
+	}
+	tasks := make([]Task, 0, len(ids))
+	for _, id := range ids { // keep the printer's newest-first order
+		if item, ok := byID[id]; ok {
+			tasks = append(tasks, item.task())
+		}
+	}
+	return tasks, nil
+}
+
+type detail struct {
+	TaskID            string `json:"TaskId"`
+	TaskName          string `json:"TaskName"`
+	BeginTime         int64  `json:"BeginTime"`
+	EndTime           int64  `json:"EndTime"`
+	TaskStatus        int    `json:"TaskStatus"`
+	AlreadyPrintLayer int    `json:"AlreadyPrintLayer"`
+	SliceInformation  struct {
+		TotalLayers int `json:"total_layer_numbers"`
+	} `json:"SliceInformation"`
+}
+
+func (item detail) task() Task {
+	task := Task{
+		TaskID:      item.TaskID,
+		Filename:    path.Base(strings.TrimPrefix(item.TaskName, "/local/")),
+		Result:      resultName(item.TaskStatus),
+		TotalLayers: item.SliceInformation.TotalLayers,
+	}
+	if item.TaskName == "" {
+		task.Filename = ""
+	}
+	if item.EndTime > 0 {
+		task.CompletedAt = time.Unix(item.EndTime, 0).UTC()
+		if item.BeginTime > 0 && item.EndTime > item.BeginTime {
+			task.DurationSeconds = int(item.EndTime - item.BeginTime)
+		}
+	}
+	return task
+}
+
+// resultName labels TaskStatus using the OpenCentauri SDCP docs
+// (docs.opencentauri.cc/software/api): 0 other, 1 completed, 2 exceptional,
+// 3 stopped. Any other value is passed through as its number, unlabeled.
+func resultName(status int) string {
+	switch status {
+	case 0:
+		return "other"
+	case 1:
+		return "completed"
+	case 2:
+		return "exceptional"
+	case 3:
+		return "stopped"
+	default:
+		return "status-" + strconv.Itoa(status)
+	}
 }
 
 func AttachSnapshots(tasks []Task, snapshots []Snapshot) []Task {
