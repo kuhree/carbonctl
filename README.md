@@ -20,7 +20,7 @@ flowchart LR
 | `carbonctl_get_snapshot` | One fresh camera image |
 | `carbonctl_get_history` | Recent print history |
 | `carbonctl_pause` / `carbonctl_resume` | Pause or resume the active print |
-| `carbonctl_prepare_stop` → `carbonctl_confirm_stop` | Two-step stop, approved by a human |
+| `carbonctl_stop` | Stop the active print |
 
 ## Safety by design
 
@@ -29,12 +29,12 @@ An assistant that can control real hardware needs hard limits:
 - **Allowlist, not denylist.** Only pause, stop and resume (SDCP 129/130/131) can
   change the printer. Every other command is rejected in one place. History is
   read over a separate read-only allowlist (SDCP 320/321).
-- **No one-shot stop.** Stopping needs a token tied to the current print.
-  Human approval is the MCP client's job (it prompts before pause, resume,
-  prepare_stop and confirm_stop); the server enforces the task-bound token, so a
-  stale token or a different print fails.
 - **Loopback only.** The server refuses to listen anywhere but localhost.
 - **One source of truth** for printer state, so the assistant never acts on a stale view.
+- **Checked right before sending.** Pause, resume and stop re-read the status and
+  send only if the same task is still in the right state. SDCP carries no task
+  id, so a print that ends or starts in the moment between that check and the
+  write can still receive the command.
 
 ## Run
 

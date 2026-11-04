@@ -12,7 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestConfirmStopUsesTaskBoundTokenWithoutElicitation(t *testing.T) {
+func TestStopIsOneCallThatSendsSDCP130(t *testing.T) {
 	source := &mutableStatus{status: printer.Status{
 		Connected: true, State: "printing", TaskID: "task-42",
 		Filename: "benchy.gcode",
@@ -23,74 +23,39 @@ func TestConfirmStopUsesTaskBoundTokenWithoutElicitation(t *testing.T) {
 		control.WithPollInterval(time.Millisecond),
 	)
 	session := connectMCP(t, source, controller, nil)
-	token := prepareStop(t, session)
 
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "carbonctl_confirm_stop", Arguments: map[string]any{"token": token},
+		Name: "carbonctl_stop", Arguments: map[string]any{},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.IsError {
-		t.Fatalf("confirm stop = %#v", result)
+		t.Fatalf("stop = %#v", result)
 	}
 	if got := sender.sent(); len(got) != 1 || got[0] != 130 {
 		t.Fatalf("commands = %v, want [130]", got)
 	}
 }
 
-func TestConfirmStopRejectsStaleOrDifferentTask(t *testing.T) {
-	tests := []struct {
-		name   string
-		change func(*mutableStatus)
-	}{
-		{"different task", func(s *mutableStatus) {
-			s.set(printer.Status{Connected: true, State: "printing", TaskID: "task-43", Filename: "other.gcode"})
-		}},
-		{"print ended", func(s *mutableStatus) {
-			s.set(printer.Status{Connected: true, State: "idle"})
-		}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			source := &mutableStatus{status: printer.Status{
-				Connected: true, State: "printing", TaskID: "task-42",
-				Filename: "benchy.gcode",
-			}}
-			sender := &observingSender{source: source}
-			controller := control.New(source, sender,
-				control.WithConfirmationTimeout(100*time.Millisecond),
-				control.WithPollInterval(time.Millisecond),
-			)
-			session := connectMCP(t, source, controller, nil)
-			token := prepareStop(t, session)
-			test.change(source)
+func TestStopWithoutAnActivePrintIsAToolErrorAndSendsNothing(t *testing.T) {
+	source := &mutableStatus{status: printer.Status{Connected: true, State: "idle"}}
+	sender := &observingSender{source: source}
+	controller := control.New(source, sender)
+	session := connectMCP(t, source, controller, nil)
 
-			result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-				Name: "carbonctl_confirm_stop", Arguments: map[string]any{"token": token},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !result.IsError {
-				t.Fatalf("confirm stop = %#v, want tool error", result)
-			}
-			if got := sender.sent(); len(got) != 0 {
-				t.Fatalf("commands = %v, want none", got)
-			}
-		})
-	}
-}
-
-func prepareStop(t *testing.T, session *mcp.ClientSession) string {
-	t.Helper()
-	prepared, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "carbonctl_prepare_stop", Arguments: map[string]any{},
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "carbonctl_stop", Arguments: map[string]any{},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return prepared.StructuredContent.(map[string]any)["token"].(string)
+	if !result.IsError {
+		t.Fatalf("stop = %#v, want tool error", result)
+	}
+	if got := sender.sent(); len(got) != 0 {
+		t.Fatalf("commands = %v, want none", got)
+	}
 }
 
 func connectMCP(

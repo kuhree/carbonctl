@@ -3,7 +3,6 @@ package control_test
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -97,8 +96,7 @@ func TestResumeTimesOutWithoutReplayingMutation(t *testing.T) {
 	}
 }
 
-func TestPrepareAndConfirmStopIsTaskBoundAndSingleUse(t *testing.T) {
-	now := time.Date(2026, 7, 26, 20, 0, 0, 0, time.UTC)
+func TestStopSendsOnceAndConfirmsFromTelemetry(t *testing.T) {
 	statuses := &statusSource{status: printer.Status{
 		Connected: true, State: "printing", TaskID: "task-42",
 		Filename: "benchy.gcode",
@@ -107,40 +105,26 @@ func TestPrepareAndConfirmStopIsTaskBoundAndSingleUse(t *testing.T) {
 		statuses.set(printer.Status{Connected: true, State: "idle"})
 	}}
 	manager := control.New(statuses, commands,
-		control.WithClock(func() time.Time { return now }),
-		control.WithRandom(strings.NewReader(strings.Repeat("unpredictable", 4))),
 		control.WithConfirmationTimeout(100*time.Millisecond),
 		control.WithPollInterval(time.Millisecond),
 	)
 
-	prepared, err := manager.PrepareStop()
+	result, err := manager.Stop(context.Background())
+
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared.Token == "" || prepared.TaskID != "task-42" ||
-		prepared.Filename != "benchy.gcode" ||
-		!prepared.ExpiresAt.Equal(now.Add(5*time.Minute)) {
-		t.Fatalf("PrepareStop() = %#v", prepared)
-	}
-	result, err := manager.ConfirmStop(context.Background(), prepared.Token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Outcome != control.Confirmed {
-		t.Fatalf("ConfirmStop() = %#v", result)
-	}
-	if _, err := manager.ConfirmStop(context.Background(), prepared.Token); !errors.Is(err, control.ErrInvalidConfirmation) {
-		t.Fatalf("reused ConfirmStop() error = %v, want ErrInvalidConfirmation", err)
+	if result.Action != "stop" || result.Outcome != control.Confirmed || result.TaskID != "task-42" {
+		t.Fatalf("Stop() = %#v", result)
 	}
 	if got := commands.sent(); len(got) != 1 || got[0] != 130 {
 		t.Fatalf("commands = %#v, want one stop", got)
 	}
 }
 
-func TestDescribeStopDoesNotConsumeConfirmation(t *testing.T) {
+func TestStopStopsAPausedPrint(t *testing.T) {
 	statuses := &statusSource{status: printer.Status{
-		Connected: true, State: "printing", TaskID: "task-42",
-		Filename: "benchy.gcode",
+		Connected: true, State: "paused", TaskID: "task-42",
 	}}
 	commands := &commandSender{afterSend: func(int) {
 		statuses.set(printer.Status{Connected: true, State: "idle"})
@@ -149,69 +133,45 @@ func TestDescribeStopDoesNotConsumeConfirmation(t *testing.T) {
 		control.WithConfirmationTimeout(100*time.Millisecond),
 		control.WithPollInterval(time.Millisecond),
 	)
-	prepared, err := manager.PrepareStop()
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	described, err := manager.DescribeStop(prepared.Token)
-	if err != nil {
+	if _, err := manager.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if described.TaskID != "task-42" || described.Filename != "benchy.gcode" {
-		t.Fatalf("DescribeStop() = %#v", described)
-	}
-	if _, err := manager.ConfirmStop(context.Background(), prepared.Token); err != nil {
-		t.Fatalf("confirmation was consumed by description: %v", err)
+	if got := commands.sent(); len(got) != 1 || got[0] != 130 {
+		t.Fatalf("commands = %#v, want one stop", got)
 	}
 }
 
-func TestStopConfirmationExpiresAndRejectsAChangedTask(t *testing.T) {
-	tests := []struct {
-		name   string
-		change func(*time.Time, *statusSource)
-	}{
-		{
-			name: "expired",
-			change: func(now *time.Time, _ *statusSource) {
-				*now = now.Add(5*time.Minute + time.Nanosecond)
-			},
-		},
-		{
-			name: "changed task",
-			change: func(_ *time.Time, source *statusSource) {
-				source.set(printer.Status{
-					Connected: true, State: "printing", TaskID: "task-99",
-				})
-			},
-		},
+func TestStopRequiresAnObservedActiveTask(t *testing.T) {
+	statuses := &statusSource{status: printer.Status{Connected: true, State: "idle"}}
+	commands := &commandSender{}
+	manager := control.New(statuses, commands)
+
+	_, err := manager.Stop(context.Background())
+
+	if !errors.Is(err, control.ErrNoActiveTask) {
+		t.Fatalf("Stop() error = %v, want ErrNoActiveTask", err)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			now := time.Date(2026, 7, 26, 20, 0, 0, 0, time.UTC)
-			statuses := &statusSource{status: printer.Status{
-				Connected: true, State: "printing", TaskID: "task-42",
-			}}
-			commands := &commandSender{}
-			manager := control.New(statuses, commands,
-				control.WithClock(func() time.Time { return now }),
-				control.WithRandom(strings.NewReader(strings.Repeat("random", 8))),
-			)
-			prepared, err := manager.PrepareStop()
-			if err != nil {
-				t.Fatal(err)
-			}
-			test.change(&now, statuses)
+	if commands.count() != 0 {
+		t.Fatalf("sent %d commands, want none", commands.count())
+	}
+}
 
-			_, err = manager.ConfirmStop(context.Background(), prepared.Token)
+func TestStopRechecksTaskImmediatelyBeforeSending(t *testing.T) {
+	source := &changingStatusSource{statuses: []printer.Status{
+		{Connected: true, State: "printing", TaskID: "task-42"},
+		{Connected: true, State: "idle"},
+	}}
+	commands := &commandSender{}
+	manager := control.New(source, commands)
 
-			if !errors.Is(err, control.ErrInvalidConfirmation) {
-				t.Fatalf("ConfirmStop() error = %v, want ErrInvalidConfirmation", err)
-			}
-			if commands.count() != 0 {
-				t.Fatalf("sent %d commands, want none", commands.count())
-			}
-		})
+	_, err := manager.Stop(context.Background())
+
+	if !errors.Is(err, control.ErrNoActiveTask) {
+		t.Fatalf("Stop() error = %v, want ErrNoActiveTask", err)
+	}
+	if commands.count() != 0 {
+		t.Fatalf("sent %d commands, want none", commands.count())
 	}
 }
 

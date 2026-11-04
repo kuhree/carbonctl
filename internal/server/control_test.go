@@ -29,11 +29,10 @@ func TestControlToolsExposeOnlyTheApprovedMutationBoundary(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	want := []string{
-		"carbonctl_confirm_stop",
 		"carbonctl_get_status",
 		"carbonctl_pause",
-		"carbonctl_prepare_stop",
 		"carbonctl_resume",
+		"carbonctl_stop",
 	}
 	if len(names) != len(want) {
 		t.Fatalf("tool names = %v, want %v", names, want)
@@ -45,7 +44,7 @@ func TestControlToolsExposeOnlyTheApprovedMutationBoundary(t *testing.T) {
 	}
 }
 
-func TestConfirmStopRejectsUnknownArgumentsWithoutSending(t *testing.T) {
+func TestStopRejectsArgumentsWithoutSending(t *testing.T) {
 	source := &mutableStatus{status: printer.Status{
 		Connected: true, State: "printing", TaskID: "task-42",
 	}}
@@ -54,8 +53,8 @@ func TestConfirmStopRejectsUnknownArgumentsWithoutSending(t *testing.T) {
 	session := connectMCP(t, source, controller, nil)
 
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name:      "carbonctl_confirm_stop",
-		Arguments: map[string]any{"token": "x", "extra": true},
+		Name:      "carbonctl_stop",
+		Arguments: map[string]any{"token": "x"},
 	})
 	if err == nil && !result.IsError {
 		t.Fatalf("result = %#v, want rejection", result)

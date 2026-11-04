@@ -12,8 +12,7 @@ import (
 type PrintController interface {
 	Pause(context.Context) (control.Result, error)
 	Resume(context.Context) (control.Result, error)
-	PrepareStop() (control.PreparedStop, error)
-	ConfirmStop(context.Context, string) (control.Result, error)
+	Stop(context.Context) (control.Result, error)
 }
 
 type Controls struct {
@@ -32,20 +31,8 @@ func (controls Controls) Tools() []Tool {
 			InputSchema: emptyInput, Call: controls.transition("resume", controls.Controller.Resume),
 		},
 		{
-			Name:        "carbonctl_prepare_stop",
-			Description: "Prepare a task-bound stop confirmation without stopping the print",
-			InputSchema: emptyInput, Call: controls.prepareStop,
-		},
-		{
-			Name:        "carbonctl_confirm_stop",
-			Description: "Stop the active print using a task-bound confirmation token",
-			InputSchema: map[string]any{
-				"type": "object", "additionalProperties": false, "required": []string{"token"},
-				"properties": map[string]any{
-					"token": map[string]any{"type": "string", "minLength": 1},
-				},
-			},
-			Call: controls.confirmStop,
+			Name: "carbonctl_stop", Description: "Stop the observed active print",
+			InputSchema: emptyInput, Call: controls.transition("stop", controls.Controller.Stop),
 		},
 	}
 }
@@ -61,30 +48,6 @@ func (controls Controls) transition(
 		result, err := transition(ctx)
 		return controlResult(result, err), nil
 	}
-}
-
-func (controls Controls) prepareStop(_ context.Context, arguments json.RawMessage) (any, error) {
-	if !validEmptyArguments(arguments) {
-		return toolError(errors.New("prepare stop accepts no arguments")), nil
-	}
-	result, err := controls.Controller.PrepareStop()
-	if err != nil {
-		return toolError(err), nil
-	}
-	return toolSuccess(result), nil
-}
-
-func (controls Controls) confirmStop(ctx context.Context, arguments json.RawMessage) (any, error) {
-	var input struct {
-		Token string `json:"token"`
-	}
-	decoder := json.NewDecoder(bytes.NewReader(arguments))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(&input) != nil || requireEOF(decoder) != nil || input.Token == "" {
-		return toolError(errors.New("confirm stop requires only a non-empty token")), nil
-	}
-	result, err := controls.Controller.ConfirmStop(ctx, input.Token)
-	return controlResult(result, err), nil
 }
 
 func controlResult(result control.Result, err error) any {

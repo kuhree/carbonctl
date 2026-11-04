@@ -29,9 +29,7 @@ func TestProcessControlsFakePrinterThroughMCP(t *testing.T) {
 		t.Fatalf("pause command = %d, want 129", command)
 	}
 
-	prepared := processTool(t, address, "carbonctl_prepare_stop", `{}`)
-	token := prepared["result"].(map[string]any)["structuredContent"].(map[string]any)["token"].(string)
-	stopped := processTool(t, address, "carbonctl_confirm_stop", `{"token":"`+token+`"}`)
+	stopped := processTool(t, address, "carbonctl_stop", `{}`)
 	if outcome(stopped) != "confirmed" {
 		t.Fatalf("stop response = %#v", stopped)
 	}
@@ -39,9 +37,9 @@ func TestProcessControlsFakePrinterThroughMCP(t *testing.T) {
 		t.Fatalf("stop command = %d, want 130", command)
 	}
 
-	reused := processTool(t, address, "carbonctl_confirm_stop", `{"token":"`+token+`"}`)
-	if reused["result"].(map[string]any)["isError"] != true {
-		t.Fatalf("reused confirmation = %#v, want tool error", reused)
+	again := processTool(t, address, "carbonctl_stop", `{}`)
+	if again["result"].(map[string]any)["isError"] != true {
+		t.Fatalf("second stop = %#v, want tool error", again)
 	}
 	select {
 	case command := <-fake.commands:
