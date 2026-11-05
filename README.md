@@ -12,6 +12,20 @@ flowchart LR
   C -->|MJPEG| K[Camera]
 ```
 
+## Skills
+
+```sh
+npx skills add kuhree/carbonctl
+```
+
+`carbonctl` is this server. `centauri-carbon` is the printer: states, the
+camera, and when a pause is not a stop. Claude Code can install the same pair:
+
+```sh
+claude plugin marketplace add kuhree/carbonctl
+claude plugin install carbonctl@kuhree-carbonctl
+```
+
 ## Tools
 
 | Tool | What it does |

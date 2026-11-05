@@ -20,3 +20,7 @@ carbonctl is an MCP server that lets an assistant watch, pause, resume and stop 
   through it; don't cache status elsewhere.
 - The HTTP listener stays loopback-only (`server.ErrNonLoopback` in
   `cmd/carbonctl/main.go`). Never widen it.
+- Agent skills live in `skills/`. `carbonctl` is the server.
+  `centauri-carbon` is the printer. Update a skill when a tool, state,
+  or outcome changes. The allowlist and the recheck stay in this repo.
+  Do not add a second control path to a skill.

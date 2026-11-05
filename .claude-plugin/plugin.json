@@ -1,0 +1,12 @@
+{
+  "name": "carbonctl",
+  "version": "0.1.0",
+  "description": "How an agent runs carbonctl, and how it should treat a Centauri Carbon.",
+  "author": {
+    "name": "kuhree",
+    "url": "https://github.com/kuhree"
+  },
+  "repository": "https://github.com/kuhree/carbonctl",
+  "license": "MIT",
+  "keywords": ["carbonctl", "3d-printing", "centauri-carbon", "mcp"]
+}
